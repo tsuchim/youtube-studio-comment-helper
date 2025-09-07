@@ -2,6 +2,7 @@
   "name": "youtube-studio-comment-helper",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "lint": "eslint \"src/**/*.js\"",
     "fmt": "prettier -w \"src/**/*.js\" manifest.json",

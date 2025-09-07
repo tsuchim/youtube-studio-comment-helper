@@ -16,7 +16,7 @@
     // 監視用イベント（任意）
     try {
       window.dispatchEvent(new CustomEvent('ysch:shadow-created', { detail: { host: this } }));
-    } catch {}
+  } catch { /* ignore dispatch failure */ }
 
     return root;
   };

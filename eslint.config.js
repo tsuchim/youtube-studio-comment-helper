@@ -12,7 +12,8 @@ export default [
       ecmaVersion: 2022,
       sourceType: 'script',
       globals: {
-        ...globals.browser,
+  ...globals.browser,
+  chrome: 'readonly',
         ...globals.node
       }
     },

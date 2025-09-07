@@ -113,7 +113,7 @@
         target.setAttribute('data-ysch-replaced', '1');
         log.debug('replaced handle', raw, '->', disp);
       });
-    } catch {}
+  } catch { /* swallow replace errors */ }
   }
 
   function requestHandleResolution(handle) {
@@ -145,7 +145,7 @@
         const t = (a.textContent || '').trim();
         if (t.startsWith('@')) requestHandleResolution(t);
       });
-    } catch {}
+  } catch { /* ignore enumeration */ }
     applyDisplayNames();
   }
 

@@ -23,7 +23,7 @@
         const r = origAttach.call(this, init);
         registry.set(this, r);
         roots.add(r);
-        try { window.dispatchEvent(new CustomEvent('ysch:shadow-created', { detail: { host: this } })); } catch {}
+  try { window.dispatchEvent(new CustomEvent('ysch:shadow-created', { detail: { host: this } })); } catch { /* ignore shadow dispatch */ }
         return r;
       };
       // customElements が存在する環境のみフック
@@ -39,7 +39,7 @@
       };
       log.debug('inline attachShadow hook installed');
     }
-  } catch (e) {
+    } catch (e) {
     log.warn('inline hook failed', e);
   }
 

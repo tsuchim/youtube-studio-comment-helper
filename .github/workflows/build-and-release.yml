@@ -32,7 +32,9 @@ jobs:
         sha256sum *.zip > sha256sums.txt
         cat sha256sums.txt
 
+    # Only create a Release when this workflow was triggered by a tag push
     - name: Create GitHub Release
+      if: startsWith(github.ref, 'refs/tags/')
       uses: softprops/action-gh-release@v1
       with:
         files: |

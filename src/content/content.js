@@ -12,7 +12,7 @@
 
   log.info('Starting injection');
 
-  // 1) 外部読み込み前に最速で attachShadow をフック（初期コンポーネント生成を逃さない）
+  // 1) Hook attachShadow as fast as possible before external loading (to not miss initial component generation)
   try {
     if (!window.__ysch_inlineHook) {
       window.__ysch_inlineHook = true;
@@ -26,7 +26,7 @@
   try { window.dispatchEvent(new CustomEvent('ysch:shadow-created', { detail: { host: this } })); } catch { /* ignore shadow dispatch */ }
         return r;
       };
-      // customElements が存在する環境のみフック
+      // Hook only in environments where customElements exist
       if (window.customElements && window.customElements.define) {
         const origDefine = window.customElements.define.bind(window.customElements);
         window.customElements.define = function(name, ctor, opts) {
@@ -43,7 +43,7 @@
     log.warn('inline hook failed', e);
   }
 
-  // 2) 既存の詳細ロジックを外部ファイルで冪等再注入
+  // 2) Idempotent re-injection of existing detailed logic via external files
   function inject(file) {
     log.info('Injecting', file);
     const s = document.createElement('script');
@@ -54,7 +54,7 @@
     s.onerror = () => { log.error('[inject] Failed to load', file, '->', s.src); };
   }
 
-  inject('src/inject/patch.js'); // 冪等（同じAPIを上書き）
+  inject('src/inject/patch.js'); // Idempotent (overwrite same API)
   inject('src/inject/app.js');
 
   // ========= Bridge: page <-> background =========

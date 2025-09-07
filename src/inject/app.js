@@ -16,13 +16,13 @@
     warn:  (...a) => { if (LEVEL >= LEVELS.warn)  console.warn('[YSCH]', ...a); },
     error: (...a) => { if (LEVEL >= LEVELS.error) console.error('[YSCH]', ...a); }
   };
-  // 変更を即時反映したい場合: localStorage.setItem('YSCH_LOG','debug'); window.dispatchEvent(new Event('ysch:reload-log-level'))
+  // To reflect changes immediately: localStorage.setItem('YSCH_LOG','debug'); window.dispatchEvent(new Event('ysch:reload-log-level'))
   window.addEventListener('ysch:reload-log-level', refreshLevel);
 
   log.info('App starting (log level=%s)', levelName);
 
   // =====================
-  // (A) ShadowRoot 調査 (デバッグ用) - 一度も取得できなければ自動停止
+  // (A) ShadowRoot investigation (for debugging) - Auto-stop if none obtained
   // =====================
   let shadowScanEnabled = true;
   let pollCount = 0;
@@ -63,7 +63,7 @@
   }
 
   function shadowScan() {
-    if (!shadowScanEnabled || LEVEL < LEVELS.debug) return; // デバッグ以外では走らせない
+    if (!shadowScanEnabled || LEVEL < LEVELS.debug) return; // Do not run except in debug
     pollCount++;
     try {
       const hosts = document.querySelectorAll('ytcp-comment, ytcp-comment-thread');
@@ -92,7 +92,7 @@
   }
 
   // =====================
-  // (B) Handle -> 表示名 取得
+  // (B) Handle -> Display Name Retrieval
   // =====================
   const resolved = new Map(); // handle(lower) -> displayName
   const requested = new Set();
@@ -139,7 +139,7 @@
   });
 
   function mainPoll() {
-    shadowScan(); // デバッグ用 (必要なら)
+    shadowScan(); // For debugging (if needed)
     try {
       document.querySelectorAll('a#name, a#author-text').forEach(a => {
         const t = (a.textContent || '').trim();

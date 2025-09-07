@@ -1,4 +1,4 @@
-// 簡易バリデーション：MV3 & 必須キー & ホスト権限 (ESM)
+// Simple validation: MV3 & required keys & host permissions (ESM)
 import fs from 'fs';
 
 const raw = fs.readFileSync(new URL('../manifest.json', import.meta.url), 'utf-8');
@@ -15,7 +15,7 @@ if (!Array.isArray(m.host_permissions) || !m.host_permissions.includes('https://
   fail('host_permissions must include studio.youtube.com');
 console.log('[manifest] OK');
 
-// アイコン存在チェック
+// Icon existence check
 ['assets/icon-16.png','assets/icon-48.png','assets/icon-128.png'].forEach((p) => {
   if (!fs.existsSync(p) || fs.statSync(p).size === 0) fail(`icon missing or empty: ${p}`);
 });

@@ -1,7 +1,7 @@
 // AGPL-3.0
 // MV3 service worker: handle -> displayName resolver with caching.
 const CACHE_KEY = 'ysch_display_name_cache_v2';
-const TTL_MS = 12 * 60 * 60 * 1000; // 12時間
+const TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
 // handle -> { name: string, ts: number }
 const memoryCache = new Map();
 let cacheLoaded = false;
@@ -17,12 +17,12 @@ function loadCache() {
         let restored = 0;
         for (const [k, v] of Object.entries(saved)) {
           if (!v) continue;
-          // 後方互換: 旧形式 string の場合は今読み込んだ時刻を ts にする
-            if (typeof v === 'string') {
-              memoryCache.set(k, { name: v, ts: now });
-              restored++;
-              continue;
-            }
+          // Backward compatibility: If old format is string, set current load time as ts
+          if (typeof v === 'string') {
+            memoryCache.set(k, { name: v, ts: now });
+            restored++;
+            continue;
+          }
           if (typeof v === 'object' && typeof v.name === 'string' && typeof v.ts === 'number') {
             if (now - v.ts <= TTL_MS) {
               memoryCache.set(k, v);
@@ -44,7 +44,7 @@ function persistCacheDebounced() {
     const now = Date.now();
     const obj = {};
     for (const [k, v] of memoryCache.entries()) {
-      if (now - v.ts <= TTL_MS) obj[k] = v; // TTL外は保存しない (自然に削除)
+      if (now - v.ts <= TTL_MS) obj[k] = v; // Do not save outside TTL (natural deletion)
     }
     try { chrome.storage.local.set({ [CACHE_KEY]: obj }); } catch {}
   }, 500);
@@ -60,7 +60,7 @@ async function resolveDisplayName(handle) {
     if (now - cached.ts <= TTL_MS && cached.name) {
       return { displayName: cached.name, cached: true };
     } else {
-      // 期限切れ
+      // Expired
       memoryCache.delete(norm);
     }
   }

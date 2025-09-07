@@ -1,19 +1,19 @@
 // AGPL-3.0
 (() => {
-  // 最低限: 余計なログは出さない（debug は app.js で完結）
+  // Minimum: Do not output extra logs (debug is handled in app.js)
   if (window.__ysch) return;
 
   const registry = new WeakMap();   // hostElement -> ShadowRoot
-  const roots = new Set();          // 収集用
+  const roots = new Set();          // For collection
   const orig = Element.prototype.attachShadow;
 
   Element.prototype.attachShadow = function(init) {
     const root = orig.call(this, init);
-    // closed でもここでは取れる
+    // Can get even if closed
     registry.set(this, root);
     roots.add(root);
 
-    // 監視用イベント（任意）
+    // Monitoring event (optional)
     try {
       window.dispatchEvent(new CustomEvent('ysch:shadow-created', { detail: { host: this } }));
   } catch { /* ignore dispatch failure */ }
@@ -21,7 +21,7 @@
     return root;
   };
 
-  // 公開 API（MAINワールド内）
+  // Public API (in MAIN world)
   window.__ysch = {
     getShadowRoot(el) {
       return registry.get(el) || el.shadowRoot || null;

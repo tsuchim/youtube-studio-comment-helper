@@ -1,0 +1,16 @@
+{
+  "name": "youtube-studio-comment-helper",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "lint": "eslint \"src/**/*.js\"",
+    "fmt": "prettier -w \"src/**/*.js\" manifest.json",
+    "validate": "node scripts/validate-manifest.js",
+    "build:zip": "bash -lc \"rm -f dist.zip && zip -r dist.zip . -x '*.git*' -x 'node_modules/*' -x 'dist.zip' -x '.github/*'\""
+  },
+  "devDependencies": {
+    "eslint": "^9.35.0",
+    "eslint-config-prettier": "^9.1.2",
+    "prettier": "^3.6.2"
+  }
+}

@@ -1,7 +1,7 @@
-// 簡易バリデーション：MV3 & 必須キー & ホスト権限
-const fs = require('fs');
+// 簡易バリデーション：MV3 & 必須キー & ホスト権限 (ESM)
+import fs from 'fs';
 
-const raw = fs.readFileSync('manifest.json', 'utf-8');
+const raw = fs.readFileSync(new URL('../manifest.json', import.meta.url), 'utf-8');
 const m = JSON.parse(raw);
 
 function fail(msg) {

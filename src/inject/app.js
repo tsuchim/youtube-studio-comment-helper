@@ -96,24 +96,57 @@
   // =====================
   const resolved = new Map(); // handle(lower) -> displayName
   const requested = new Set();
+  const pendingErrors = new Map(); // handle(lower) -> {count, lastTs}
+  const MAX_RETRY = 3;
+  const RETRY_INTERVAL_MS = 4000;
+
+  // New: robust handle extraction (prefers href, falls back to text)
+  function extractHandleFromAnchor(a) {
+    if (!a) return null;
+    const href = a.getAttribute('href') || '';
+    if (href.startsWith('/@')) {
+      const h = href.slice(2).split(/[/?#]/)[0];
+      if (h) return h;
+    }
+    const txt = (a.textContent || '').trim();
+    if (txt.startsWith('@')) return txt.slice(1);
+    return null;
+  }
 
   function applyDisplayNames() {
     try {
       const anchors = document.querySelectorAll('a#name, a#author-text');
       anchors.forEach(a => {
-        const raw = (a.textContent || '').trim();
-        if (!raw.startsWith('@')) return;
-        const handle = raw.slice(1);
-        const disp = resolved.get(handle.toLowerCase());
-        if (!disp) return;
+        const handle = extractHandleFromAnchor(a);
+        if (!handle) return;
+        const key = handle.toLowerCase();
         const target = a.querySelector('yt-formatted-string.author-text') || a;
-        if (target.getAttribute('data-ysch-replaced') === '1') return;
-        target.setAttribute('data-ysch-original-handle', raw);
+
+        // If this DOM node has been recycled for a different handle, reset state
+        const prevHandle = target.getAttribute('data-ysch-handle');
+        if (prevHandle && prevHandle !== key) {
+          target.removeAttribute('data-ysch-replaced');
+          target.removeAttribute('data-ysch-original-handle');
+          target.textContent = '@' + handle; // show raw handle until resolved
+        }
+
+        const disp = resolved.get(key);
+        if (!disp) {
+          // If not yet resolved and text was previously replaced, ensure it shows the raw handle
+          if (target.getAttribute('data-ysch-replaced') === '1' && !resolved.has(key)) {
+            target.textContent = '@' + handle;
+            target.removeAttribute('data-ysch-replaced');
+          }
+          return;
+        }
+        if (target.getAttribute('data-ysch-replaced') === '1' && target.getAttribute('data-ysch-handle') === key) return;
+        target.setAttribute('data-ysch-original-handle', '@' + handle);
+        target.setAttribute('data-ysch-handle', key);
         target.textContent = disp;
         target.setAttribute('data-ysch-replaced', '1');
-        log.debug('replaced handle', raw, '->', disp);
+        log.debug('replaced handle', '@'+handle, '->', disp);
       });
-  } catch { /* swallow replace errors */ }
+    } catch { /* swallow replace errors */ }
   }
 
   function requestHandleResolution(handle) {
@@ -125,31 +158,74 @@
     window.dispatchEvent(new CustomEvent('ysch:resolve-handle', { detail: { handle: h } }));
   }
 
+  function scheduleRetry(handleLower) {
+    const entry = pendingErrors.get(handleLower);
+    if (!entry) return;
+    if (entry.count >= MAX_RETRY) return;
+    const now = Date.now();
+    if (now - entry.lastTs < RETRY_INTERVAL_MS) return;
+    entry.count++;
+    entry.lastTs = now;
+    window.dispatchEvent(new CustomEvent('ysch:resolve-handle', { detail: { handle: handleLower } }));
+  }
+
   window.addEventListener('ysch:display-name-resolved', ev => {
-    const { handle, displayName, error, cached } = ev.detail || {};
+    const { handle, displayName, error, cached } = ev.detail || {}; // add cached to destructuring
     if (!handle) return;
     const key = handle.toLowerCase();
     if (displayName) {
+      pendingErrors.delete(key);
       resolved.set(key, displayName);
       log.info('displayName:', '@'+handle, '=>', displayName, cached ? '(cache)' : '');
       applyDisplayNames();
     } else if (error) {
       log.warn('displayName resolve failed', handle, error);
+      if (/Extension context invalidated/i.test(error)) {
+        const cur = pendingErrors.get(key) || { count: 0, lastTs: 0 };
+        pendingErrors.set(key, cur);
+        scheduleRetry(key);
+      }
     }
   });
 
-  function mainPoll() {
-    shadowScan(); // For debugging (if needed)
+  function enumerateAndRequest() {
     try {
       document.querySelectorAll('a#name, a#author-text').forEach(a => {
-        const t = (a.textContent || '').trim();
-        if (t.startsWith('@')) requestHandleResolution(t);
+        const handle = extractHandleFromAnchor(a);
+        if (handle) requestHandleResolution(handle);
       });
-  } catch { /* ignore enumeration */ }
+    } catch { /* ignore enumeration */ }
+  }
+
+  function mainPoll() {
+    shadowScan(); // For debugging (if needed)
+    enumerateAndRequest();
     applyDisplayNames();
   }
 
+  // MutationObserver for faster reaction to dynamically loaded comment batches
+  const mo = new MutationObserver(muts => {
+    let touched = false;
+    for (const m of muts) {
+      if (m.addedNodes && m.addedNodes.length) {
+        for (const n of m.addedNodes) {
+          if (n.nodeType === 1) {
+            if (n.matches?.('a#name, a#author-text') || n.querySelector?.('a#name, a#author-text')) {
+              touched = true; break;
+            }
+          }
+        }
+      }
+      if (touched) break;
+    }
+    if (touched) {
+      // Slight delay to allow YouTube's own rendering batches to settle
+      queueMicrotask(() => { enumerateAndRequest(); applyDisplayNames(); });
+    }
+  });
+  try { mo.observe(document.documentElement, { childList: true, subtree: true }); } catch {}
+
   const interval = setInterval(mainPoll, 1500);
-  window.addEventListener('beforeunload', () => clearInterval(interval));
+  window.addEventListener('beforeunload', () => { try { mo.disconnect(); } catch {}; clearInterval(interval); });
   log.info('handle->displayName bridge active (interval 1500ms)');
 })();

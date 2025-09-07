@@ -65,6 +65,10 @@
     if (!handle) return;
     try {
       chrome.runtime.sendMessage({ type: 'resolveDisplayName', handle }, resp => {
+        if (chrome.runtime.lastError) {
+          window.dispatchEvent(new CustomEvent('ysch:display-name-resolved', { detail: { handle, displayName: null, error: chrome.runtime.lastError.message } }));
+          return;
+        }
         window.dispatchEvent(new CustomEvent('ysch:display-name-resolved', { detail: { handle, ...resp } }));
       });
     } catch (err) {

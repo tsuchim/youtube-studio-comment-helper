@@ -7,6 +7,15 @@ Access commenter info inside closed Shadow DOM on YouTube Studio.
 2. Click **Load unpacked** and select the repo root.
 3. Open YouTube Studio ➜ Comments and open DevTools console.
 
+### Logging levels
+Set in DevTools (persists via localStorage):
+
+```
+localStorage.setItem('YSCH_LOG','debug');   // debug|info|warn|error|silent
+window.dispatchEvent(new Event('ysch:reload-log-level'));
+```
+Default is `warn`. ShadowRoot scan executes only when log level is `debug` (and stops automatically if none are found after a few polls).
+
 ## Build (CI / local)
 - `npm run lint`
 - `npm run validate`

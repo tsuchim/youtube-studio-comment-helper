@@ -1,11 +1,33 @@
 // AGPL-3.0
 (() => {
-  console.log('[YSCH] App starting...');
+  // =====================
+  // Logging Utility
+  // =====================
+  const LEVELS = { silent:0, error:1, warn:2, info:3, debug:4 };
+  function readLevel() {
+    try { return (localStorage.getItem('YSCH_LOG') || 'warn').toLowerCase(); } catch { return 'warn'; }
+  }
+  let levelName = readLevel();
+  let LEVEL = LEVELS[levelName] ?? LEVELS.warn;
+  function refreshLevel() { levelName = readLevel(); LEVEL = LEVELS[levelName] ?? LEVELS.warn; }
+  const log = {
+    debug: (...a) => { if (LEVEL >= LEVELS.debug) console.debug('[YSCH]', ...a); },
+    info:  (...a) => { if (LEVEL >= LEVELS.info)  console.info('[YSCH]', ...a); },
+    warn:  (...a) => { if (LEVEL >= LEVELS.warn)  console.warn('[YSCH]', ...a); },
+    error: (...a) => { if (LEVEL >= LEVELS.error) console.error('[YSCH]', ...a); }
+  };
+  // 変更を即時反映したい場合: localStorage.setItem('YSCH_LOG','debug'); window.dispatchEvent(new Event('ysch:reload-log-level'))
+  window.addEventListener('ysch:reload-log-level', refreshLevel);
 
-  // 取得済み表示名重複回避
-  const seenNames = new Set();
+  log.info('App starting (log level=%s)', levelName);
 
-  // 名前候補セレクタ（順序優先）
+  // =====================
+  // (A) ShadowRoot 調査 (デバッグ用) - 一度も取得できなければ自動停止
+  // =====================
+  let shadowScanEnabled = true;
+  let pollCount = 0;
+  let foundAnyShadow = false;
+
   const NAME_SELECTORS = [
     'a#author-text',
     'a#name',
@@ -14,16 +36,17 @@
     'a[href^="/channel/"]',
     'a[href^="/@"]'
   ];
+  const seenNames = new Set();
 
   function extractNameFromNode(node) {
     if (!node) return null;
     const txt = node.textContent || '';
     const trimmed = txt.trim();
-    if (trimmed && /\S/.test(trimmed)) return trimmed;
-    return null;
+    return trimmed && /\S/.test(trimmed) ? trimmed : null;
   }
 
   function processRoot(root, label) {
+    if (!root) return;
     try {
       for (const sel of NAME_SELECTORS) {
         const el = root.querySelector(sel);
@@ -31,46 +54,45 @@
         const name = extractNameFromNode(el);
         if (name && !seenNames.has(name)) {
           seenNames.add(name);
-          console.log('[YSCH] commenter:', name, `(via ${label} sel=${sel})`);
+          log.debug('commenter:', name, `(via ${label} sel=${sel})`);
         }
       }
     } catch (e) {
-      console.debug('[YSCH] processRoot error', e);
+      log.debug('processRoot error', e);
     }
   }
 
-  function poll() {
+  function shadowScan() {
+    if (!shadowScanEnabled || LEVEL < LEVELS.debug) return; // デバッグ以外では走らせない
+    pollCount++;
     try {
-      console.debug('[YSCH] poll start');
       const hosts = document.querySelectorAll('ytcp-comment, ytcp-comment-thread');
-      console.debug('[YSCH] hosts found:', hosts.length);
+      log.debug('hosts found:', hosts.length);
       hosts.forEach(host => {
         const root = window.__ysch?.getShadowRoot(host);
-        console.debug('[YSCH] host:', host.tagName, 'shadowRoot?', !!root);
-        if (!root) return;
-        processRoot(root, 'host-root');
+        log.debug('host:', host.tagName, 'shadowRoot?', !!root);
+        if (root) {
+          foundAnyShadow = true;
+          processRoot(root, 'host-root');
+        }
       });
-
-      // 捕捉済み全 ShadowRoot を再走査（attachShadow フックで拾ったもの）
-      try {
-        const allRoots = typeof window.__ysch?.getAllRoots === 'function' ? window.__ysch.getAllRoots() : [];
-        console.debug('[YSCH] total captured roots:', allRoots.length);
+      const allRoots = typeof window.__ysch?.getAllRoots === 'function' ? window.__ysch.getAllRoots() : [];
+      log.debug('total captured roots:', allRoots.length);
+      if (allRoots.length) {
+        foundAnyShadow = true;
         allRoots.forEach(r => processRoot(r, 'captured-root'));
-      } catch (e) {
-        console.debug('[YSCH] enumerate roots error', e);
       }
     } catch (e) {
-      console.warn('[YSCH] poll error', e);
+      log.warn('shadow scan error', e);
+    }
+    if (pollCount >= 5 && !foundAnyShadow) {
+      shadowScanEnabled = false;
+      log.info('shadow scan disabled (no roots after %d polls)', pollCount);
     }
   }
 
-  const interval = setInterval(poll, 1000);
-  window.addEventListener('ysch:shadow-created', poll);
-  window.addEventListener('beforeunload', () => clearInterval(interval));
-  console.debug('[YSCH] polling every 1000ms');
-
   // =====================
-  // Handle -> 表示名 取得 (background 経由)
+  // (B) Handle -> 表示名 取得
   // =====================
   const resolved = new Map(); // handle(lower) -> displayName
   const requested = new Set();
@@ -89,11 +111,9 @@
         target.setAttribute('data-ysch-original-handle', raw);
         target.textContent = disp;
         target.setAttribute('data-ysch-replaced', '1');
-        console.debug('[YSCH] replaced handle with displayName', raw, '->', disp);
+        log.debug('replaced handle', raw, '->', disp);
       });
-    } catch (e) {
-      // ignore
-    }
+    } catch {}
   }
 
   function requestHandleResolution(handle) {
@@ -111,27 +131,25 @@
     const key = handle.toLowerCase();
     if (displayName) {
       resolved.set(key, displayName);
-      console.log('[YSCH] displayName:', '@' + handle, '=>', displayName, cached ? '(cache)' : '');
-  applyDisplayNames();
+      log.info('displayName:', '@'+handle, '=>', displayName, cached ? '(cache)' : '');
+      applyDisplayNames();
     } else if (error) {
-      console.debug('[YSCH] displayName resolve failed', handle, error);
+      log.warn('displayName resolve failed', handle, error);
     }
   });
 
-  // poll をラップして handle 抽出
-  const originalPoll = poll;
-  function pollWithHandles() {
-    originalPoll();
+  function mainPoll() {
+    shadowScan(); // デバッグ用 (必要なら)
     try {
       document.querySelectorAll('a#name, a#author-text').forEach(a => {
         const t = (a.textContent || '').trim();
         if (t.startsWith('@')) requestHandleResolution(t);
       });
     } catch {}
-  applyDisplayNames();
+    applyDisplayNames();
   }
-  clearInterval(interval);
-  const newInterval = setInterval(pollWithHandles, 1500);
-  window.addEventListener('beforeunload', () => clearInterval(newInterval));
-  console.debug('[YSCH] handle->displayName bridge active');
+
+  const interval = setInterval(mainPoll, 1500);
+  window.addEventListener('beforeunload', () => clearInterval(interval));
+  log.info('handle->displayName bridge active (interval 1500ms)');
 })();

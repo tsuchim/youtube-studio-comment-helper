@@ -1,5 +1,6 @@
 // AGPL-3.0
 (() => {
+  // 最低限: 余計なログは出さない（debug は app.js で完結）
   if (window.__ysch) return;
 
   const registry = new WeakMap();   // hostElement -> ShadowRoot

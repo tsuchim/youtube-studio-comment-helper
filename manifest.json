@@ -4,7 +4,10 @@
   "version": "0.1.0",
   "description": "Access commenter info inside closed Shadow DOM on YouTube Studio.",
   "permissions": ["scripting", "storage"],
-  "host_permissions": ["https://studio.youtube.com/*"],
+  "host_permissions": [
+    "https://studio.youtube.com/*",
+    "https://www.youtube.com/*"
+  ],
   "icons": {
     "16": "assets/icon-16.png",
     "48": "assets/icon-48.png",
@@ -19,5 +22,18 @@
   ],
   "action": {
     "default_title": "YT Studio Comment Helper"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "src/inject/patch.js",
+        "src/inject/app.js"
+      ],
+      "matches": ["https://studio.youtube.com/*"]
+    }
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
   }
 }

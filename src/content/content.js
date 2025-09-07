@@ -62,17 +62,18 @@
   // we forward to background and emit 'ysch:display-name-resolved'
   window.addEventListener('ysch:resolve-handle', e => {
     const handle = e?.detail?.handle;
-    if (!handle) return;
+    const channelId = e?.detail?.channelId; // optional new field
+    if (!handle && !channelId) return;
     try {
-      chrome.runtime.sendMessage({ type: 'resolveDisplayName', handle }, resp => {
+      chrome.runtime.sendMessage({ type: 'resolveDisplayName', handle, channelId }, resp => {
         if (chrome.runtime.lastError) {
-          window.dispatchEvent(new CustomEvent('ysch:display-name-resolved', { detail: { handle, displayName: null, error: chrome.runtime.lastError.message } }));
+          window.dispatchEvent(new CustomEvent('ysch:display-name-resolved', { detail: { handle, channelId, displayName: null, error: chrome.runtime.lastError.message } }));
           return;
         }
-        window.dispatchEvent(new CustomEvent('ysch:display-name-resolved', { detail: { handle, ...resp } }));
+        window.dispatchEvent(new CustomEvent('ysch:display-name-resolved', { detail: { handle, channelId, ...resp } }));
       });
     } catch (err) {
-      window.dispatchEvent(new CustomEvent('ysch:display-name-resolved', { detail: { handle, displayName: null, error: String(err) } }));
+      window.dispatchEvent(new CustomEvent('ysch:display-name-resolved', { detail: { handle, channelId, displayName: null, error: String(err) } }));
     }
   });
 })();

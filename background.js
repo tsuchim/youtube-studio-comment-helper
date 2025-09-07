@@ -2,7 +2,7 @@
 // MV3 service worker: handle -> displayName resolver with caching.
 const CACHE_KEY = 'ysch_display_name_cache_v2';
 const TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
-// handle -> { name: string, ts: number }
+// key (norm) -> { name: string, ts: number }
 const memoryCache = new Map();
 let cacheLoaded = false;
 
@@ -50,29 +50,30 @@ function persistCacheDebounced() {
   }, 500);
 }
 
-async function resolveDisplayName(handle) {
+async function resolveDisplayName(handle, channelId) {
   loadCache();
-  if (!handle) return { displayName: null, cached: false };
-  const norm = handle.toLowerCase(); // normalization for lookup
-  const cached = memoryCache.get(norm);
-  const now = Date.now();
-  if (cached) {
-    if (now - cached.ts <= TTL_MS && cached.name) {
-      return { displayName: cached.name, cached: true };
-    } else {
-      // Expired
-      memoryCache.delete(norm);
-    }
+  // prefer handle when both provided
+  if (!handle && !channelId) return { displayName: null, cached: false };
+  let normKey, fetchUrl;
+  if (handle) {
+    normKey = 'h:' + handle.toLowerCase();
+    fetchUrl = `https://www.youtube.com/@${encodeURIComponent(handle)}`;
+  } else {
+    normKey = 'c:' + channelId;
+    fetchUrl = `https://www.youtube.com/channel/${encodeURIComponent(channelId)}`;
   }
-  const encoded = encodeURIComponent(handle);
-  const url = `https://www.youtube.com/@${encoded}`;
+  const cached = memoryCache.get(normKey);
+  const now = Date.now();
+  if (cached && now - cached.ts <= TTL_MS && cached.name) {
+    return { displayName: cached.name, cached: true };
+  }
   try {
-    const res = await fetch(url, { credentials: 'omit', mode: 'cors' });
+    const res = await fetch(fetchUrl, { credentials: 'omit', mode: 'cors' });
     if (!res.ok) return { displayName: null, error: 'http:' + res.status };
     const text = await res.text();
     const name = extractDisplayName(text);
     if (name) {
-      memoryCache.set(norm, { name, ts: now });
+      memoryCache.set(normKey, { name, ts: now });
       persistCacheDebounced();
     }
     return { displayName: name || null, cached: false };
@@ -101,8 +102,9 @@ function decodeEntities(str) {
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg || msg.type !== 'resolveDisplayName') return;
-  resolveDisplayName(msg.handle).then(r => sendResponse(r));
+  // Backward compatibility: old messages only had handle
+  resolveDisplayName(msg.handle, msg.channelId).then(r => sendResponse(r));
   return true; // async
 });
 
-console.debug('[YSCH/bg] service worker loaded');
+console.debug('[YSCH/bg] service worker loaded (v2 channelId support)');

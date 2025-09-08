@@ -60,9 +60,9 @@
       this.log = logger;
       this.resolved = new Map(); // cacheKey -> displayName
       this.requested = new Set(); // cacheKey
-  // handle/channelId 毎に紐づく要素集合
+  // Element sets associated with each handle/channelId
   this.keyToElements = new Map(); // key -> Set<element>
-  // 要素ごとの現在状態
+  // Current state for each element
   this.elementState = new WeakMap(); // el -> { key, rawHandle, replaced }
     }
     

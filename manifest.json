@@ -22,7 +22,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["src/inject/app.js"],
+      "resources": ["src/inject/app.js", "pr-test.js"],
       "matches": ["https://studio.youtube.com/*", "https://www.youtube.com/*"]
     }
   ],

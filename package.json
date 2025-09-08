@@ -8,11 +8,12 @@
     "lint": "eslint . --fix",
     "validate": "node scripts/validate-manifest.js",
     "build": "npm run lint && npm run validate",
-    "build:zip": "powershell New-Item -ItemType Directory -Force -Path dist; Compress-Archive -Path manifest.json,background.js,src/,assets/,scripts/,pr-test.js -DestinationPath dist/youtube-studio-comment-helper.zip -Force",
+  "build:zip": "node scripts/build-zip.js",
     "test": "echo \"No tests specified\" && exit 0"
   },
   "devDependencies": {
-    "eslint": "^8.57.0"
+  "eslint": "^8.57.0",
+  "archiver": "^5.3.2"
   },
   "keywords": ["youtube", "chrome-extension", "comment-helper"],
   "author": "Your Name",

@@ -265,7 +265,7 @@
       // Intersection observer for viewport entry
       this.setupIntersectionObserver();
 
-  // Anchor-level intersection observer (後からビューに入った未適用要素を補足)
+  // Anchor-level intersection observer (captures unapplied elements that enter the view later)
   this.setupAnchorObserver();
     }
     

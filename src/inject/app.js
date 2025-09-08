@@ -318,13 +318,13 @@
         }, 300);
       };
       
-  // window のスクロール (通常のページ全体スクロール)
+  // window scroll (normal page-wide scrolling)
   window.addEventListener('scroll', this.scrollHandler, { passive: true });
-  // capture で任意のスクロールコンテナからのイベントも拾う (Studioは内部スクロールが多い)
+  // Use capture to catch scroll events from arbitrary scroll containers (Studio often uses internal scrolling)
   document.addEventListener('scroll', this.scrollHandler, { passive: true, capture: true });
-  // 既知のスクロールコンテナ候補にリスナを追加 (存在すれば)
+  // Add listeners to known scroll container candidates (if they exist)
   this.attachScrollContainers();
-  // 動的に追加されるスクロールコンテナを数秒ごとに探索
+  // Periodically search for dynamically added scroll containers every few seconds
   this.scrollContainerWatcher = setInterval(() => this.attachScrollContainers(), 4000);
     }
     

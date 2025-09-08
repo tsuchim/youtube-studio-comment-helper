@@ -60,6 +60,10 @@
       this.log = logger;
       this.resolved = new Map(); // cacheKey -> displayName
       this.requested = new Set(); // cacheKey
+  // handle/channelId 毎に紐づく要素集合
+  this.keyToElements = new Map(); // key -> Set<element>
+  // 要素ごとの現在状態
+  this.elementState = new WeakMap(); // el -> { key, rawHandle, replaced }
     }
     
     getCacheKey(type, value) {
@@ -119,30 +123,79 @@
     processAnchor(anchor) {
       const extracted = HandleExtractor.extract(anchor);
       if (!extracted) return false;
-      
       const { type, value } = extracted;
-      const target = anchor.querySelector('yt-formatted-string.author-text') || anchor;
+      // 対象は anchor 本体に限定（余計な兄弟/日付混入を最小化）
+      const target = anchor;
       const key = this.getCacheKey(type, value);
-      
-      // Check if already processed for this handle/channelId
-      if (target.getAttribute('data-ysch-key') === key) return false;
-      
-      // Request resolution if needed
+
+      const state = this.elementState.get(target);
+      if (state && state.key !== key) {
+        // リサイクル: 旧集合から除去
+        const oldSet = this.keyToElements.get(state.key);
+        if (oldSet) oldSet.delete(target);
+        // 汚染テキスト (旧表示名 + 新 @handle) をクリーン化
+        const handleToken = '@' + value;
+        if (!target.textContent || !target.textContent.includes(handleToken)) {
+          target.textContent = handleToken; // 新ハンドルのみ保持
+        } else {
+          // 先頭に別文字列があればトリム
+          const idx = target.textContent.indexOf(handleToken);
+          if (idx > 0) target.textContent = target.textContent.slice(idx);
+          else target.textContent = handleToken;
+        }
+        target.removeAttribute('data-ysch-replaced');
+        target.removeAttribute('data-ysch-original');
+      }
+
+      // 登録
+      if (!this.keyToElements.has(key)) this.keyToElements.set(key, new Set());
+      this.keyToElements.get(key).add(target);
+      this.elementState.set(target, { key, rawHandle: type === 'handle' ? value : null, replaced: false });
+      target.setAttribute('data-ysch-key', key);
+
+      // 解決要求（初回のみ）
       this.request(type, value);
-      
-      // Apply if resolved
+
+      // 既解決なら即適用
       const displayName = this.resolved.get(key);
       if (displayName) {
-        const originalHandle = type === 'handle' ? value : null;
-        if (this.replaceInTarget(target, originalHandle, displayName)) {
-          target.setAttribute('data-ysch-key', key);
-          target.setAttribute('data-ysch-original', originalHandle ? `@${originalHandle}` : '');
-          this.log.debug('Replaced:', originalHandle ? `@${originalHandle}` : value, '=>', displayName);
-          return true;
-        }
+        return this.applyDisplayNameToElement(key, target, displayName);
       }
-      
       return false;
+    }
+
+    applyDisplayNameToElement(key, el, displayName) {
+      if (!el || !displayName) return false;
+      const state = this.elementState.get(el);
+      if (!state) return false;
+      if (el.getAttribute('data-ysch-replaced') === '1') return false;
+      const handle = state.rawHandle;
+      if (handle) {
+        const token = '@' + handle;
+        const txt = el.textContent || '';
+        // 汚染パターン: 先頭に displayName でない文字列 + token
+        if (txt.includes(token)) {
+          // 例: "旧名@handle", "他人名 @handle", "@handle • 9 日前" など → token 部分が存在したら丸ごと displayName に正規化
+          // アンカー内に本来付くべきでない付帯情報は外部 DOM にある想定なので保持しない
+          el.textContent = displayName;
+        } else if (/^\S+@/.test(txt)) {
+          // 既に前方汚染（別名 + @新ハンドル未表示）: 強制表示名
+          el.textContent = displayName;
+        } else if (txt.trim() === '' || txt.trim() === token) {
+          el.textContent = displayName;
+        } else {
+          // 不明パターン: 無理に書き換えずスキップ
+          return false;
+        }
+      } else {
+        // channelId の場合は安全に全置換（anchor 内は純粋な名前のみ想定）
+        el.textContent = displayName;
+      }
+      el.setAttribute('data-ysch-replaced', '1');
+      if (handle) el.setAttribute('data-ysch-original', '@'+handle);
+      const st = this.elementState.get(el);
+      if (st) st.replaced = true;
+      return true;
     }
     
     // Collect anchors from document + captured shadow roots (if patch.js injected)
@@ -176,6 +229,19 @@
       }
       if (processed && this.log.level >= 4) this.log.debug('Processed anchors count:', processed);
       return processed;
+    }
+
+    applyResolvedToKey(key) {
+      const displayName = this.resolved.get(key);
+      if (!displayName) return 0;
+      const set = this.keyToElements.get(key);
+      if (!set || !set.size) return 0;
+      let applied = 0;
+      for (const el of [...set]) {
+        if (!el.isConnected) { set.delete(el); continue; }
+  if (this.applyDisplayNameToElement(key, el, displayName)) applied++;
+      }
+      return applied;
     }
   }
 
@@ -395,10 +461,21 @@
   window.addEventListener('ysch:display-name-resolved', ev => {
     const resolved = replacer.onResolved(ev.detail || {});
     if (resolved) {
-      // Re-process to apply new resolutions
-  setTimeout(() => replacer.processAll(), 30);
-  setTimeout(() => replacer.processAll(), 250); // guard shorter delay
-  setTimeout(() => replacer.processAll(), 1000); // guard long delay
+      const { handle, channelId } = ev.detail || {};
+      const key = handle ? replacer.getCacheKey('handle', handle) : replacer.getCacheKey('channelId', channelId);
+      // 直接キーに紐づく全要素へ適用（再スキャン不要）
+      const appliedNow = replacer.applyResolvedToKey(key);
+      if (appliedNow === 0) {
+        // 要素が後から来るケースに備えて軽い遅延再試行（限定回数）
+        let attempts = 0;
+        const retry = () => {
+          const a = replacer.applyResolvedToKey(key);
+            attempts++;
+          if (a > 0 || attempts >= 3) return;
+          setTimeout(retry, attempts === 1 ? 120 : 400);
+        };
+        setTimeout(retry, 60);
+      }
     }
   });
 

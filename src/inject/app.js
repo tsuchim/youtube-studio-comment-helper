@@ -123,22 +123,22 @@
     processAnchor(anchor) {
       const extracted = HandleExtractor.extract(anchor);
       if (!extracted) return false;
-      const { type, value } = extracted;
-      // 対象は anchor 本体に限定（余計な兄弟/日付混入を最小化）
+  const { type, value } = extracted;
+  // Limit target to the anchor element itself (avoid sibling/date contamination)
       const target = anchor;
       const key = this.getCacheKey(type, value);
 
       const state = this.elementState.get(target);
       if (state && state.key !== key) {
-        // リサイクル: 旧集合から除去
+        // Recycling: remove from old element set
         const oldSet = this.keyToElements.get(state.key);
         if (oldSet) oldSet.delete(target);
-        // 汚染テキスト (旧表示名 + 新 @handle) をクリーン化
+        // Clean contaminated text (old displayName + new @handle)
         const handleToken = '@' + value;
         if (!target.textContent || !target.textContent.includes(handleToken)) {
-          target.textContent = handleToken; // 新ハンドルのみ保持
+          target.textContent = handleToken; // Keep only the new handle
         } else {
-          // 先頭に別文字列があればトリム
+          // Trim any leading unrelated string before the handle token
           const idx = target.textContent.indexOf(handleToken);
           if (idx > 0) target.textContent = target.textContent.slice(idx);
           else target.textContent = handleToken;
@@ -147,16 +147,16 @@
         target.removeAttribute('data-ysch-original');
       }
 
-      // 登録
+      // Registration
       if (!this.keyToElements.has(key)) this.keyToElements.set(key, new Set());
       this.keyToElements.get(key).add(target);
       this.elementState.set(target, { key, rawHandle: type === 'handle' ? value : null, replaced: false });
       target.setAttribute('data-ysch-key', key);
 
-      // 解決要求（初回のみ）
+      // Request resolution (first time only)
       this.request(type, value);
 
-      // 既解決なら即適用
+      // Apply immediately if already resolved
       const displayName = this.resolved.get(key);
       if (displayName) {
         return this.applyDisplayNameToElement(key, target, displayName);
@@ -173,22 +173,22 @@
       if (handle) {
         const token = '@' + handle;
         const txt = el.textContent || '';
-        // 汚染パターン: 先頭に displayName でない文字列 + token
+        // Contamination pattern: non-displayName prefix + token later in the string
         if (txt.includes(token)) {
-          // 例: "旧名@handle", "他人名 @handle", "@handle • 9 日前" など → token 部分が存在したら丸ごと displayName に正規化
-          // アンカー内に本来付くべきでない付帯情報は外部 DOM にある想定なので保持しない
+          // Examples: "oldName@handle", "someoneElse @handle", "@handle • 9 days ago" -> normalize entire anchor to displayName
+          // Extra metadata that belongs outside the anchor is assumed to live elsewhere, so we discard it here
           el.textContent = displayName;
         } else if (/^\S+@/.test(txt)) {
-          // 既に前方汚染（別名 + @新ハンドル未表示）: 強制表示名
+          // Already front-contaminated (foreign prefix + @newHandle missing) -> force displayName
           el.textContent = displayName;
         } else if (txt.trim() === '' || txt.trim() === token) {
           el.textContent = displayName;
         } else {
-          // 不明パターン: 無理に書き換えずスキップ
+          // Unknown pattern: skip without aggressive overwrite
           return false;
         }
       } else {
-        // channelId の場合は安全に全置換（anchor 内は純粋な名前のみ想定）
+        // channelId case: safe full replacement (anchor expected to contain only the name)
         el.textContent = displayName;
       }
       el.setAttribute('data-ysch-replaced', '1');
@@ -239,7 +239,7 @@
       let applied = 0;
       for (const el of [...set]) {
         if (!el.isConnected) { set.delete(el); continue; }
-  if (this.applyDisplayNameToElement(key, el, displayName)) applied++;
+        if (this.applyDisplayNameToElement(key, el, displayName)) applied++;
       }
       return applied;
     }
@@ -265,7 +265,7 @@
       // Intersection observer for viewport entry
       this.setupIntersectionObserver();
 
-  // Anchor-level intersection observer (captures unapplied elements that enter the view later)
+  // Anchor-level intersection observer (captures unapplied elements that enter the viewport later)
   this.setupAnchorObserver();
     }
     
@@ -351,7 +351,7 @@
       if (this.scrollHandler) window.removeEventListener('scroll', this.scrollHandler);
       if (this.scrollHandler) document.removeEventListener('scroll', this.scrollHandler, { capture: true });
       if (this.scrollContainerWatcher) clearInterval(this.scrollContainerWatcher);
-      if (this.fallbackInterval) clearInterval(this.fallbackInterval);
+  if (this.fallbackInterval) clearInterval(this.fallbackInterval);
   if (this.anchorObserver) this.anchorObserver.disconnect();
     }
 
@@ -365,7 +365,7 @@
         document.querySelectorAll(sel).forEach(el => {
           if (!el || typeof el.addEventListener !== 'function') return;
           if (el.__yschScrollBound) return;
-          // スクロール可能か軽く判定
+          // Light heuristic: only attach scroll listener if element appears scrollable
           try {
             const hasScroll = (el.scrollHeight - el.clientHeight) > 8 || getComputedStyle(el).overflowY === 'auto' || getComputedStyle(el).overflowY === 'scroll';
             if (!hasScroll) return;
@@ -402,7 +402,7 @@
       } catch (e) {
         this.log.warn('Anchor observer init failed', e);
       }
-      // 初期登録
+  // Initial registration
       setTimeout(() => this.registerAnchorsForObservation(), 800);
       setTimeout(() => this.registerAnchorsForObservation(), 2500);
     }
@@ -412,14 +412,14 @@
       try {
         const anchors = replacer?.collectAnchors?.() || [];
         for (const a of anchors) {
-          // 既に置換済みなら不要
+          // Skip anchors already replaced
             const extracted = HandleExtractor.extract(a);
             if (!extracted) continue;
             const { type, value } = extracted;
             const key = replacer.getCacheKey(type, value);
             const target = a.querySelector('yt-formatted-string.author-text') || a;
             if (target.getAttribute('data-ysch-key') === key) continue; // already applied
-            // 解決済みか未解決かに関わらず、ビューポート侵入時に再トライする仕組み
+            // Re-attempt on viewport entry regardless of resolution state
             this.anchorObserver.observe(a);
         }
       } catch (e) {
@@ -439,7 +439,7 @@
   // Enable fallback periodic processing (safety net for missed events in infinite scroll)
   trigger.enableFallback(7000);
   
-  // Explicit startup kicks (初期ロード直後に確実に走らせる)
+  // Explicit startup triggers (ensure execution immediately after initial load)
   function startupKick() {
     try {
       replacer.processAll();
@@ -463,10 +463,10 @@
     if (resolved) {
       const { handle, channelId } = ev.detail || {};
       const key = handle ? replacer.getCacheKey('handle', handle) : replacer.getCacheKey('channelId', channelId);
-      // 直接キーに紐づく全要素へ適用（再スキャン不要）
+  // Apply directly to all elements bound to the key (no full rescan needed)
       const appliedNow = replacer.applyResolvedToKey(key);
       if (appliedNow === 0) {
-        // 要素が後から来るケースに備えて軽い遅延再試行（限定回数）
+  // Light delayed retries for elements that may appear later (bounded attempts)
         let attempts = 0;
         const retry = () => {
           const a = replacer.applyResolvedToKey(key);
@@ -479,7 +479,7 @@
     }
   });
 
-  // 新しい ShadowRoot が生成されたら短い遅延で再処理
+  // Reprocess with short delay when new ShadowRoot is created
   window.addEventListener('ysch:shadow-created', () => {
     setTimeout(() => replacer.processAll(), 80);
     setTimeout(() => replacer.processAll(), 500);

@@ -1,155 +1,506 @@
 // AGPL-3.0
+// Core handle-to-displayName replacement system for YouTube Studio
 (() => {
-  // =====================
-  // Logging Utility
-  // =====================
-  const LEVELS = { silent:0, error:1, warn:2, info:3, debug:4 };
-  function readLevel() {
-    try { return (localStorage.getItem('YSCH_LOG') || 'warn').toLowerCase(); } catch { return 'warn'; }
-  }
-  let levelName = readLevel();
-  let LEVEL = LEVELS[levelName] ?? LEVELS.warn;
-  function refreshLevel() { levelName = readLevel(); LEVEL = LEVELS[levelName] ?? LEVELS.warn; }
-  const log = {
-    debug: (...a) => { if (LEVEL >= LEVELS.debug) console.debug('[YSCH]', ...a); },
-    info:  (...a) => { if (LEVEL >= LEVELS.info)  console.info('[YSCH]', ...a); },
-    warn:  (...a) => { if (LEVEL >= LEVELS.warn)  console.warn('[YSCH]', ...a); },
-    error: (...a) => { if (LEVEL >= LEVELS.error) console.error('[YSCH]', ...a); }
-  };
-  // To reflect changes immediately: localStorage.setItem('YSCH_LOG','debug'); window.dispatchEvent(new Event('ysch:reload-log-level'))
-  window.addEventListener('ysch:reload-log-level', refreshLevel);
+  'use strict';
 
-  log.info('App starting (log level=%s)', levelName);
-
-  // =====================
-  // (A) ShadowRoot investigation (for debugging) - Auto-stop if none obtained
-  // =====================
-  let shadowScanEnabled = true;
-  let pollCount = 0;
-  let foundAnyShadow = false;
-
-  const NAME_SELECTORS = [
-    'a#author-text',
-    'a#name',
-    '#author-text',
-    'yt-formatted-string#author-text',
-    'a[href^="/channel/"]',
-    'a[href^="/@"]'
-  ];
-  const seenNames = new Set();
-
-  function extractNameFromNode(node) {
-    if (!node) return null;
-    const txt = node.textContent || '';
-    const trimmed = txt.trim();
-    return trimmed && /\S/.test(trimmed) ? trimmed : null;
+  // ==================== CORE ARCHITECTURE ====================
+  
+  class Logger {
+    constructor() {
+      this.levels = { silent:0, error:1, warn:2, info:3, debug:4 };
+      this.refresh();
+      window.addEventListener('ysch:reload-log-level', () => this.refresh());
+    }
+    
+    refresh() {
+      try {
+        this.levelName = (localStorage.getItem('YSCH_LOG') || 'warn').toLowerCase();
+        this.level = this.levels[this.levelName] ?? this.levels.warn;
+      } catch { 
+        this.levelName = 'warn'; 
+        this.level = this.levels.warn; 
+      }
+    }
+    
+    debug(...a) { if (this.level >= 4) console.debug('[YSCH]', ...a); }
+    info(...a)  { if (this.level >= 3) console.info('[YSCH]', ...a); }
+    warn(...a)  { if (this.level >= 2) console.warn('[YSCH]', ...a); }
+    error(...a) { if (this.level >= 1) console.error('[YSCH]', ...a); }
   }
 
-  function processRoot(root, label) {
-    if (!root) return;
-    try {
-      for (const sel of NAME_SELECTORS) {
-        const el = root.querySelector(sel);
-        if (!el) continue;
-        const name = extractNameFromNode(el);
-        if (name && !seenNames.has(name)) {
-          seenNames.add(name);
-          log.debug('commenter:', name, `(via ${label} sel=${sel})`);
+  class HandleExtractor {
+    static extract(anchor) {
+      if (!anchor) return null;
+      
+      // Priority 1: href with @handle
+      const href = anchor.getAttribute('href') || '';
+      if (href.startsWith('/@')) {
+        const handle = href.slice(2).split(/[/?#]/)[0];
+        if (handle) return { type: 'handle', value: handle };
+      }
+      
+      // Priority 2: href with channelId
+      const channelMatch = href.match(/\/channel\/(UC[0-9A-Za-z_-]{10,})/);
+      if (channelMatch) {
+        return { type: 'channelId', value: channelMatch[1] };
+      }
+      
+      // Priority 3: text content with @handle
+      const text = (anchor.textContent || '').trim();
+      if (text.startsWith('@')) {
+        return { type: 'handle', value: text.slice(1) };
+      }
+      
+      return null;
+    }
+  }
+
+  class DisplayNameReplacer {
+    constructor(logger) {
+      this.log = logger;
+      this.resolved = new Map(); // cacheKey -> displayName
+      this.requested = new Set(); // cacheKey
+  // Element sets associated with each handle/channelId
+  this.keyToElements = new Map(); // key -> Set<element>
+  // Current state for each element
+  this.elementState = new WeakMap(); // el -> { key, rawHandle, replaced }
+    }
+    
+    getCacheKey(type, value) {
+      return `${type}:${value.toLowerCase()}`;
+    }
+    
+    isResolved(type, value) {
+      return this.resolved.has(this.getCacheKey(type, value));
+    }
+    
+    request(type, value) {
+      const key = this.getCacheKey(type, value);
+      if (this.requested.has(key) || this.resolved.has(key)) return false;
+      
+      this.requested.add(key);
+      const detail = type === 'handle' ? { handle: value } : { channelId: value };
+      window.dispatchEvent(new CustomEvent('ysch:resolve-handle', { detail }));
+      return true;
+    }
+    
+    onResolved({ handle, channelId, displayName, error, cached }) {
+      const type = handle ? 'handle' : 'channelId';
+      const value = handle || channelId;
+      const key = this.getCacheKey(type, value);
+      
+      if (displayName) {
+        this.resolved.set(key, displayName);
+        this.log.info(`Resolved ${type}:`, value, '=>', displayName, cached ? '(cached)' : '');
+        return true;
+      } else if (error) {
+        this.log.warn(`Resolution failed for ${type}:`, value, error);
+        return false;
+      }
+      return false;
+    }
+    
+    replaceInTarget(target, originalHandle, displayName) {
+      if (!target || !originalHandle || !displayName) return false;
+      
+      const handleToken = '@' + originalHandle;
+      
+      // Find and replace in text nodes
+      const walker = document.createTreeWalker(target, NodeFilter.SHOW_TEXT);
+      while (walker.nextNode()) {
+        const node = walker.currentNode;
+        if (node.nodeValue && node.nodeValue.includes(handleToken)) {
+          node.nodeValue = node.nodeValue.replace(handleToken, displayName);
+          return true;
         }
       }
-    } catch (e) {
-      log.debug('processRoot error', e);
+      
+      // Fallback: replace entire text content
+      target.textContent = displayName;
+      return true;
     }
-  }
+    
+    processAnchor(anchor) {
+      const extracted = HandleExtractor.extract(anchor);
+      if (!extracted) return false;
+  const { type, value } = extracted;
+  // Limit target to the anchor element itself (avoid sibling/date contamination)
+      const target = anchor;
+      const key = this.getCacheKey(type, value);
 
-  function shadowScan() {
-    if (!shadowScanEnabled || LEVEL < LEVELS.debug) return; // Do not run except in debug
-    pollCount++;
-    try {
-      const hosts = document.querySelectorAll('ytcp-comment, ytcp-comment-thread');
-      log.debug('hosts found:', hosts.length);
-      hosts.forEach(host => {
-        const root = window.__ysch?.getShadowRoot(host);
-        log.debug('host:', host.tagName, 'shadowRoot?', !!root);
-        if (root) {
-          foundAnyShadow = true;
-          processRoot(root, 'host-root');
+      const state = this.elementState.get(target);
+      if (state && state.key !== key) {
+        // Recycling: remove from old element set
+        const oldSet = this.keyToElements.get(state.key);
+        if (oldSet) oldSet.delete(target);
+        // Clean contaminated text (old displayName + new @handle)
+        const handleToken = '@' + value;
+        if (!target.textContent || !target.textContent.includes(handleToken)) {
+          target.textContent = handleToken; // Keep only the new handle
+        } else {
+          // Trim any leading unrelated string before the handle token
+          const idx = target.textContent.indexOf(handleToken);
+          if (idx > 0) target.textContent = target.textContent.slice(idx);
+          else target.textContent = handleToken;
         }
-      });
-      const allRoots = typeof window.__ysch?.getAllRoots === 'function' ? window.__ysch.getAllRoots() : [];
-      log.debug('total captured roots:', allRoots.length);
-      if (allRoots.length) {
-        foundAnyShadow = true;
-        allRoots.forEach(r => processRoot(r, 'captured-root'));
+        target.removeAttribute('data-ysch-replaced');
+        target.removeAttribute('data-ysch-original');
       }
-    } catch (e) {
-      log.warn('shadow scan error', e);
+
+      // Registration
+      if (!this.keyToElements.has(key)) this.keyToElements.set(key, new Set());
+      this.keyToElements.get(key).add(target);
+      this.elementState.set(target, { key, rawHandle: type === 'handle' ? value : null, replaced: false });
+      target.setAttribute('data-ysch-key', key);
+
+      // Request resolution (first time only)
+      this.request(type, value);
+
+      // Apply immediately if already resolved
+      const displayName = this.resolved.get(key);
+      if (displayName) {
+        return this.applyDisplayNameToElement(key, target, displayName);
+      }
+      return false;
     }
-    if (pollCount >= 5 && !foundAnyShadow) {
-      shadowScanEnabled = false;
-      log.info('shadow scan disabled (no roots after %d polls)', pollCount);
+
+    applyDisplayNameToElement(key, el, displayName) {
+      if (!el || !displayName) return false;
+      const state = this.elementState.get(el);
+      if (!state) return false;
+      if (el.getAttribute('data-ysch-replaced') === '1') return false;
+      const handle = state.rawHandle;
+      if (handle) {
+        const token = '@' + handle;
+        const txt = el.textContent || '';
+        // Contamination pattern: non-displayName prefix + token later in the string
+        if (txt.includes(token)) {
+          // Examples: "oldName@handle", "someoneElse @handle", "@handle • 9 days ago" -> normalize entire anchor to displayName
+          // Extra metadata that belongs outside the anchor is assumed to live elsewhere, so we discard it here
+          el.textContent = displayName;
+        } else if (/^\S+@/.test(txt)) {
+          // Already front-contaminated (foreign prefix + @newHandle missing) -> force displayName
+          el.textContent = displayName;
+        } else if (txt.trim() === '' || txt.trim() === token) {
+          el.textContent = displayName;
+        } else {
+          // Unknown pattern: skip without aggressive overwrite
+          return false;
+        }
+      } else {
+        // channelId case: safe full replacement (anchor expected to contain only the name)
+        el.textContent = displayName;
+      }
+      el.setAttribute('data-ysch-replaced', '1');
+      if (handle) el.setAttribute('data-ysch-original', '@'+handle);
+      const st = this.elementState.get(el);
+      if (st) st.replaced = true;
+      return true;
+    }
+    
+    // Collect anchors from document + captured shadow roots (if patch.js injected)
+    collectAnchors() {
+      const selector = 'a#name, a#author-text, a[href^="/@"][id="name"], a[href^="/@"][id="author-text"], a[href^="/@"]';
+      const set = new Set();
+      // Light DOM
+      document.querySelectorAll(selector).forEach(a => set.add(a));
+      // Shadow roots (captured even if closed by patch.js)
+      try {
+        const roots = window.__ysch?.getAllRoots?.() || [];
+        for (const r of roots) {
+          if (!r || !r.querySelectorAll) continue;
+            r.querySelectorAll(selector).forEach(a => set.add(a));
+        }
+      } catch (e) {
+        this.log.debug('Shadow root scan failed', e);
+      }
+      return Array.from(set);
+    }
+
+    processAll() {
+      const anchors = this.collectAnchors();
+      let processed = 0;
+      for (const anchor of anchors) {
+        try {
+          if (this.processAnchor(anchor)) processed++;
+        } catch (e) {
+          this.log.debug('Error processing anchor:', e);
+        }
+      }
+      if (processed && this.log.level >= 4) this.log.debug('Processed anchors count:', processed);
+      return processed;
+    }
+
+    applyResolvedToKey(key) {
+      const displayName = this.resolved.get(key);
+      if (!displayName) return 0;
+      const set = this.keyToElements.get(key);
+      if (!set || !set.size) return 0;
+      let applied = 0;
+      for (const el of [...set]) {
+        if (!el.isConnected) { set.delete(el); continue; }
+        if (this.applyDisplayNameToElement(key, el, displayName)) applied++;
+      }
+      return applied;
     }
   }
 
-  // =====================
-  // (B) Handle -> Display Name Retrieval
-  // =====================
-  const resolved = new Map(); // handle(lower) -> displayName
-  const requested = new Set();
+  class SmartTrigger {
+    constructor(processor, logger) {
+      this.process = processor;
+      this.log = logger;
+      this.init();
+    }
+    
+    init() {
+      // Initial processing after page elements settle
+      this.scheduleInitial();
+      
+      // Mutation observer for dynamic content
+      this.setupMutationObserver();
+      
+      // Scroll-based processing for infinite scroll
+      this.setupScrollHandler();
+      
+      // Intersection observer for viewport entry
+      this.setupIntersectionObserver();
 
-  function applyDisplayNames() {
-    try {
-      const anchors = document.querySelectorAll('a#name, a#author-text');
-      anchors.forEach(a => {
-        const raw = (a.textContent || '').trim();
-        if (!raw.startsWith('@')) return;
-        const handle = raw.slice(1);
-        const disp = resolved.get(handle.toLowerCase());
-        if (!disp) return;
-        const target = a.querySelector('yt-formatted-string.author-text') || a;
-        if (target.getAttribute('data-ysch-replaced') === '1') return;
-        target.setAttribute('data-ysch-original-handle', raw);
-        target.textContent = disp;
-        target.setAttribute('data-ysch-replaced', '1');
-        log.debug('replaced handle', raw, '->', disp);
+  // Anchor-level intersection observer (captures unapplied elements that enter the viewport later)
+  this.setupAnchorObserver();
+    }
+    
+    scheduleInitial() {
+      // Multiple attempts during page load
+      setTimeout(() => this.process(), 100);   // Fast initial
+      setTimeout(() => this.process(), 500);   // After DOM settle
+      setTimeout(() => this.process(), 1500);  // After heavy scripts
+    }
+    
+    setupMutationObserver() {
+      let timeout = null;
+      
+      this.mutationObserver = new MutationObserver(mutations => {
+        if (timeout) clearTimeout(timeout);
+        
+        timeout = setTimeout(() => {
+          const hasRelevantNodes = mutations.some(m => 
+            Array.from(m.addedNodes).some(n => 
+              n.nodeType === 1 && (
+                n.matches?.('a#name, a#author-text') || 
+                n.querySelector?.('a#name, a#author-text')
+              )
+            )
+          );
+          
+          if (hasRelevantNodes) {
+            this.log.debug('Mutation triggered processing');
+            this.process();
+          }
+          timeout = null;
+        }, 150); // Debounce
       });
-  } catch { /* swallow replace errors */ }
+      
+      this.mutationObserver.observe(document.documentElement, {
+        childList: true,
+        subtree: true
+      });
+    }
+    
+    setupScrollHandler() {
+      let timeout = null;
+      
+      this.scrollHandler = () => {
+        if (timeout) return;
+        timeout = setTimeout(() => {
+          this.log.debug('Scroll triggered processing');
+          this.process();
+          timeout = null;
+        }, 300);
+      };
+      
+  // window scroll (normal page-wide scrolling)
+  window.addEventListener('scroll', this.scrollHandler, { passive: true });
+  // Use capture to catch scroll events from arbitrary scroll containers (Studio often uses internal scrolling)
+  document.addEventListener('scroll', this.scrollHandler, { passive: true, capture: true });
+  // Add listeners to known scroll container candidates (if they exist)
+  this.attachScrollContainers();
+  // Periodically search for dynamically added scroll containers every few seconds
+  this.scrollContainerWatcher = setInterval(() => this.attachScrollContainers(), 4000);
+    }
+    
+    setupIntersectionObserver() {
+      this.intersectionObserver = new IntersectionObserver(entries => {
+        const hasNewEntries = entries.some(entry => entry.isIntersecting);
+        if (hasNewEntries) {
+          this.log.debug('Intersection triggered processing');
+          this.process();
+        }
+      }, { rootMargin: '50px' });
+      
+      // Observe comment containers as they appear
+      setTimeout(() => {
+        document.querySelectorAll('ytcp-comment, ytcp-comment-thread').forEach(el => {
+          this.intersectionObserver.observe(el);
+        });
+      }, 1000);
+    }
+    
+    destroy() {
+      if (this.mutationObserver) this.mutationObserver.disconnect();
+      if (this.intersectionObserver) this.intersectionObserver.disconnect();
+      if (this.scrollHandler) window.removeEventListener('scroll', this.scrollHandler);
+      if (this.scrollHandler) document.removeEventListener('scroll', this.scrollHandler, { capture: true });
+      if (this.scrollContainerWatcher) clearInterval(this.scrollContainerWatcher);
+  if (this.fallbackInterval) clearInterval(this.fallbackInterval);
+  if (this.anchorObserver) this.anchorObserver.disconnect();
+    }
+
+    attachScrollContainers() {
+      const selectors = [
+        'ytd-app', 'ytcp-app', '#content', 'ytcp-comments-list',
+        'ytcp-comment-thread', 'ytcp-comment', 'tp-yt-app-drawer',
+        'iron-pages', 'ytcp-page-manager'
+      ];
+      selectors.forEach(sel => {
+        document.querySelectorAll(sel).forEach(el => {
+          if (!el || typeof el.addEventListener !== 'function') return;
+          if (el.__yschScrollBound) return;
+          // Light heuristic: only attach scroll listener if element appears scrollable
+          try {
+            const hasScroll = (el.scrollHeight - el.clientHeight) > 8 || getComputedStyle(el).overflowY === 'auto' || getComputedStyle(el).overflowY === 'scroll';
+            if (!hasScroll) return;
+          } catch { /* ignore style access */ }
+          el.addEventListener('scroll', this.scrollHandler, { passive: true });
+          el.__yschScrollBound = true;
+          this.log.debug('Attached scroll listener to', sel);
+        });
+      });
+    }
+
+    enableFallback(intervalMs = 6000) {
+      if (this.fallbackInterval) return;
+      this.fallbackInterval = setInterval(() => {
+        this.log.debug('Fallback interval processing');
+        this.process();
+      }, intervalMs);
+    }
+
+    setupAnchorObserver() {
+      try {
+        this.anchorObserver = new IntersectionObserver(entries => {
+          for (const entry of entries) {
+            if (!entry.isIntersecting) continue;
+            const a = entry.target;
+            try {
+              if (replacer && typeof replacer.processAnchor === 'function') {
+                const ok = replacer.processAnchor(a);
+                if (ok) this.anchorObserver.unobserve(a);
+              }
+            } catch { /* ignore single anchor processing error */ }
+          }
+        }, { rootMargin: '100px' });
+      } catch (e) {
+        this.log.warn('Anchor observer init failed', e);
+      }
+  // Initial registration
+      setTimeout(() => this.registerAnchorsForObservation(), 800);
+      setTimeout(() => this.registerAnchorsForObservation(), 2500);
+    }
+
+    registerAnchorsForObservation() {
+      if (!this.anchorObserver) return;
+      try {
+        const anchors = replacer?.collectAnchors?.() || [];
+        for (const a of anchors) {
+          // Skip anchors already replaced
+            const extracted = HandleExtractor.extract(a);
+            if (!extracted) continue;
+            const { type, value } = extracted;
+            const key = replacer.getCacheKey(type, value);
+            const target = a.querySelector('yt-formatted-string.author-text') || a;
+            if (target.getAttribute('data-ysch-key') === key) continue; // already applied
+            // Re-attempt on viewport entry regardless of resolution state
+            this.anchorObserver.observe(a);
+        }
+      } catch (e) {
+        this.log.debug('registerAnchorsForObservation error', e);
+      }
+    }
   }
 
-  function requestHandleResolution(handle) {
-    if (!handle) return;
-    const h = handle.startsWith('@') ? handle.slice(1) : handle;
-    const key = h.toLowerCase();
-    if (resolved.has(key) || requested.has(key)) return;
-    requested.add(key);
-    window.dispatchEvent(new CustomEvent('ysch:resolve-handle', { detail: { handle: h } }));
+  // ==================== INITIALIZATION ====================
+  
+  const logger = new Logger();
+  const replacer = new DisplayNameReplacer(logger);
+  const trigger = new SmartTrigger(() => {
+    const count = replacer.processAll();
+    if (trigger && count) trigger.registerAnchorsForObservation();
+  }, logger);
+  // Enable fallback periodic processing (safety net for missed events in infinite scroll)
+  trigger.enableFallback(7000);
+  
+  // Explicit startup triggers (ensure execution immediately after initial load)
+  function startupKick() {
+    try {
+      replacer.processAll();
+      setTimeout(() => replacer.processAll(), 400);   // after micro layout
+      setTimeout(() => replacer.processAll(), 1200);  // after heavy scripts
+      setTimeout(() => replacer.processAll(), 3000);  // after possible late shadow attach
+      logger.debug('Startup kick scheduled');
+    } catch (e) {
+      logger.warn('Startup kick error', e);
+    }
   }
-
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', startupKick, { once: true });
+  } else {
+    startupKick();
+  }
+  
+  // Bridge to background script
   window.addEventListener('ysch:display-name-resolved', ev => {
-    const { handle, displayName, error, cached } = ev.detail || {};
-    if (!handle) return;
-    const key = handle.toLowerCase();
-    if (displayName) {
-      resolved.set(key, displayName);
-      log.info('displayName:', '@'+handle, '=>', displayName, cached ? '(cache)' : '');
-      applyDisplayNames();
-    } else if (error) {
-      log.warn('displayName resolve failed', handle, error);
+    const resolved = replacer.onResolved(ev.detail || {});
+    if (resolved) {
+      const { handle, channelId } = ev.detail || {};
+      const key = handle ? replacer.getCacheKey('handle', handle) : replacer.getCacheKey('channelId', channelId);
+  // Apply directly to all elements bound to the key (no full rescan needed)
+      const appliedNow = replacer.applyResolvedToKey(key);
+      if (appliedNow === 0) {
+  // Light delayed retries for elements that may appear later (bounded attempts)
+        let attempts = 0;
+        const retry = () => {
+          const a = replacer.applyResolvedToKey(key);
+            attempts++;
+          if (a > 0 || attempts >= 3) return;
+          setTimeout(retry, attempts === 1 ? 120 : 400);
+        };
+        setTimeout(retry, 60);
+      }
     }
   });
 
-  function mainPoll() {
-    shadowScan(); // For debugging (if needed)
-    try {
-      document.querySelectorAll('a#name, a#author-text').forEach(a => {
-        const t = (a.textContent || '').trim();
-        if (t.startsWith('@')) requestHandleResolution(t);
-      });
-  } catch { /* ignore enumeration */ }
-    applyDisplayNames();
+  // Reprocess with short delay when new ShadowRoot is created
+  window.addEventListener('ysch:shadow-created', () => {
+    setTimeout(() => replacer.processAll(), 80);
+    setTimeout(() => replacer.processAll(), 500);
+  });
+  
+  // Cleanup on page unload
+  window.addEventListener('beforeunload', () => trigger.destroy());
+  
+  // Development helpers
+  if (typeof window !== 'undefined') {
+    window.__ysch_debug = {
+      logger,
+      replacer,
+      trigger,
+      processNow: () => replacer.processAll(),
+      stats: () => ({
+        resolved: replacer.resolved.size,
+        requested: replacer.requested.size
+      })
+    };
   }
-
-  const interval = setInterval(mainPoll, 1500);
-  window.addEventListener('beforeunload', () => clearInterval(interval));
-  log.info('handle->displayName bridge active (interval 1500ms)');
+  
+  logger.info('YouTube Studio Comment Helper v2 initialized');
 })();

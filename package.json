@@ -1,19 +1,21 @@
 {
   "name": "youtube-studio-comment-helper",
-  "version": "0.1.0",
-  "private": true,
+  "version": "0.2.0",
+  "description": "Clean YouTube Studio Comment Helper - handle to display name replacement",
+  "main": "background-v2.js",
   "type": "module",
   "scripts": {
-    "lint": "eslint \"src/**/*.js\"",
-    "fmt": "prettier -w \"src/**/*.js\" manifest.json",
+    "lint": "eslint . --fix",
     "validate": "node scripts/validate-manifest.js",
-    "build:zip": "bash -lc \"rm -f dist.zip && zip -r dist.zip . -x '*.git*' -x 'node_modules/*' -x 'dist.zip' -x '.github/*'\""
+    "build": "npm run lint && npm run validate",
+  "build:zip": "node scripts/build-zip.js",
+    "test": "echo \"No tests specified\" && exit 0"
   },
   "devDependencies": {
-    "@eslint/js": "^9.35.0",
-    "eslint": "^9.35.0",
-    "eslint-config-prettier": "^9.1.2",
-    "globals": "^15.11.0",
-    "prettier": "^3.6.2"
-  }
+  "eslint": "^8.57.0",
+  "archiver": "^5.3.2"
+  },
+  "keywords": ["youtube", "chrome-extension", "comment-helper"],
+  "author": "Your Name",
+  "license": "MIT"
 }

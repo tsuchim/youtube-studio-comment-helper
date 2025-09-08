@@ -12,6 +12,15 @@ on:
 
 permissions:
   contents: write
+  actions: read
+  deployments: write
+  id-token: write
+  issues: write
+  packages: write
+  pull-requests: write
+  repository-projects: write
+  security-events: write
+  statuses: write
 
 jobs:
   build-and-release:
@@ -62,7 +71,7 @@ jobs:
             ${{ steps.meta.outputs.zip_path }}.sha256
 
       - name: Create or update GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ github.ref_name }}
           name: ${{ github.ref_name }}

@@ -1,10 +1,10 @@
-// PR前テストスクリプト - 拡張機能の基本機能を検証
+// Pre-PR test script - validate basic extension functionality
 (() => {
   'use strict';
 
   console.log('[PR TEST] Starting extension validation...');
 
-  // 1. 必須ファイル存在チェック
+  // 1. Required file presence check (existence assumed, we only log)
   const requiredFiles = [
     'manifest.json',
     'background.js',
@@ -16,14 +16,14 @@
   console.log('[PR TEST] Checking required files...');
   requiredFiles.forEach(file => {
     try {
-      // ファイル存在は事前確認済みなのでログのみ
+  // Presence already verified externally; log for visibility
       console.log(`[PR TEST] ✓ ${file} exists`);
     } catch (e) {
       console.error(`[PR TEST] ✗ ${file} missing:`, e);
     }
   });
 
-  // 2. manifest.json 構造チェック
+  // 2. manifest.json structural validation
   console.log('[PR TEST] Validating manifest.json...');
   try {
     const manifest = chrome.runtime.getManifest();
@@ -38,7 +38,7 @@
     console.error('[PR TEST] ✗ manifest.json validation failed:', e);
   }
 
-  // 3. 基本APIチェック
+  // 3. Basic Chrome extension API availability check
   console.log('[PR TEST] Testing basic APIs...');
   try {
     // chrome.runtime API
@@ -58,11 +58,11 @@
     console.error('[PR TEST] ✗ API check failed:', e);
   }
 
-  // 4. 拡張機能初期化状態チェック
+  // 4. Extension initialization state check
   console.log('[PR TEST] Checking extension initialization...');
   setTimeout(() => {
     try {
-      // グローバルオブジェクトチェック
+  // Global objects check
       if (window.__ysch) {
         console.log('[PR TEST] ✓ window.__ysch available');
       } else {
@@ -80,7 +80,7 @@
     }
   }, 2000);
 
-  // 5. テスト完了
+  // 5. Completion notice
   setTimeout(() => {
     console.log('[PR TEST] Validation complete. Check console for any errors.');
     console.log('[PR TEST] If no errors, extension is ready for PR.');

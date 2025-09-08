@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "YouTube Studio Comment Helper",
-  "version": "0.1.1",
-  "description": "Access commenter info inside closed Shadow DOM on YouTube Studio and YouTube main site.",
-  "permissions": ["scripting", "storage"],
+  "version": "0.2.0",
+  "description": "Clean handle-to-displayName replacement for YouTube Studio and main site.",
+  "permissions": ["storage"],
   "host_permissions": [
     "https://studio.youtube.com/*",
     "https://www.youtube.com/*"
@@ -20,15 +20,9 @@
       "run_at": "document_start"
     }
   ],
-  "action": {
-    "default_title": "YT Studio Comment Helper"
-  },
   "web_accessible_resources": [
     {
-      "resources": [
-        "src/inject/patch.js",
-        "src/inject/app.js"
-      ],
+      "resources": ["src/inject/app.js"],
       "matches": ["https://studio.youtube.com/*", "https://www.youtube.com/*"]
     }
   ],

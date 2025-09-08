@@ -1,110 +1,151 @@
 // AGPL-3.0
-// MV3 service worker: handle -> displayName resolver with caching.
-const CACHE_KEY = 'ysch_display_name_cache_v2';
+// Clean background script for handle/channelId resolution with caching
+const CACHE_KEY = 'ysch_cache_v3';
 const TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
-// key (norm) -> { name: string, ts: number }
-const memoryCache = new Map();
-let cacheLoaded = false;
 
-function loadCache() {
-  if (cacheLoaded) return;
-  cacheLoaded = true;
-  try {
-    chrome.storage.local.get([CACHE_KEY], items => {
-      const saved = items[CACHE_KEY];
+class DisplayNameResolver {
+  constructor() {
+    this.cache = new Map();
+    this.loadCache();
+  }
+
+  async loadCache() {
+    try {
+      const result = await chrome.storage.local.get([CACHE_KEY]);
+      const saved = result[CACHE_KEY];
+      
       if (saved && typeof saved === 'object') {
         const now = Date.now();
-        let restored = 0;
-        for (const [k, v] of Object.entries(saved)) {
-          if (!v) continue;
-          // Backward compatibility: If old format is string, set current load time as ts
-          if (typeof v === 'string') {
-            memoryCache.set(k, { name: v, ts: now });
-            restored++;
-            continue;
-          }
-          if (typeof v === 'object' && typeof v.name === 'string' && typeof v.ts === 'number') {
-            if (now - v.ts <= TTL_MS) {
-              memoryCache.set(k, v);
-              restored++;
+        
+        for (const [key, entry] of Object.entries(saved)) {
+          if (entry && typeof entry === 'object' && entry.name && entry.ts) {
+            if (now - entry.ts <= TTL_MS) {
+              this.cache.set(key, entry);
             }
           }
         }
-        console.debug('[YSCH/bg] cache restored size=', restored);
+        
+        console.debug('[YSCH/bg] Cache loaded:', this.cache.size, 'entries');
       }
-    });
-  } catch (e) {
-    console.debug('[YSCH/bg] cache load error', e);
+    } catch (e) {
+      console.debug('[YSCH/bg] Cache load error:', e);
+    }
   }
-}
 
-function persistCacheDebounced() {
-  if (persistCacheDebounced._t) clearTimeout(persistCacheDebounced._t);
-  persistCacheDebounced._t = setTimeout(() => {
+  async saveCache() {
     const now = Date.now();
-    const obj = {};
-    for (const [k, v] of memoryCache.entries()) {
-      if (now - v.ts <= TTL_MS) obj[k] = v; // Do not save outside TTL (natural deletion)
+    const toSave = {};
+    
+    for (const [key, entry] of this.cache.entries()) {
+      if (now - entry.ts <= TTL_MS) {
+        toSave[key] = entry;
+      }
     }
-    try { chrome.storage.local.set({ [CACHE_KEY]: obj }); } catch {}
-  }, 500);
-}
-
-async function resolveDisplayName(handle, channelId) {
-  loadCache();
-  // prefer handle when both provided
-  if (!handle && !channelId) return { displayName: null, cached: false };
-  let normKey, fetchUrl;
-  if (handle) {
-    normKey = 'h:' + handle.toLowerCase();
-    fetchUrl = `https://www.youtube.com/@${encodeURIComponent(handle)}`;
-  } else {
-    normKey = 'c:' + channelId;
-    fetchUrl = `https://www.youtube.com/channel/${encodeURIComponent(channelId)}`;
-  }
-  const cached = memoryCache.get(normKey);
-  const now = Date.now();
-  if (cached && now - cached.ts <= TTL_MS && cached.name) {
-    return { displayName: cached.name, cached: true };
-  }
-  try {
-    const res = await fetch(fetchUrl, { credentials: 'omit', mode: 'cors' });
-    if (!res.ok) return { displayName: null, error: 'http:' + res.status };
-    const text = await res.text();
-    const name = extractDisplayName(text);
-    if (name) {
-      memoryCache.set(normKey, { name, ts: now });
-      persistCacheDebounced();
+    
+    try {
+      await chrome.storage.local.set({ [CACHE_KEY]: toSave });
+    } catch (e) {
+      console.debug('[YSCH/bg] Cache save error:', e);
     }
-    return { displayName: name || null, cached: false };
-  } catch (e) {
-    return { displayName: null, error: String(e) };
+  }
+
+  getCacheKey(handle, channelId) {
+    return handle ? `h:${handle.toLowerCase()}` : `c:${channelId}`;
+  }
+
+  async resolve(handle, channelId) {
+    if (!handle && !channelId) {
+      return { displayName: null, error: 'No handle or channelId provided' };
+    }
+
+    const cacheKey = this.getCacheKey(handle, channelId);
+    const cached = this.cache.get(cacheKey);
+    const now = Date.now();
+
+    // Return cached if valid
+    if (cached && now - cached.ts <= TTL_MS) {
+      return { displayName: cached.name, cached: true };
+    }
+
+    // Determine fetch URL
+    const url = handle 
+      ? `https://www.youtube.com/@${encodeURIComponent(handle)}`
+      : `https://www.youtube.com/channel/${encodeURIComponent(channelId)}`;
+
+    try {
+      const response = await fetch(url, { 
+        credentials: 'omit', 
+        mode: 'cors',
+        cache: 'default'
+      });
+
+      if (!response.ok) {
+        return { displayName: null, error: `HTTP ${response.status}` };
+      }
+
+      const html = await response.text();
+      const displayName = this.extractDisplayName(html);
+
+      if (displayName) {
+        // Cache the result
+        this.cache.set(cacheKey, { name: displayName, ts: now });
+        
+        // Debounced save
+        clearTimeout(this.saveTimeout);
+        this.saveTimeout = setTimeout(() => this.saveCache(), 1000);
+        
+        return { displayName, cached: false };
+      }
+
+      return { displayName: null, error: 'Could not extract display name' };
+
+    } catch (error) {
+      return { displayName: null, error: error.message };
+    }
+  }
+
+  extractDisplayName(html) {
+    // Try og:title first
+    const ogMatch = html.match(/<meta\s+property="og:title"\s+content="([^"]+)"/i);
+    if (ogMatch) {
+      return this.decodeEntities(ogMatch[1].trim());
+    }
+
+    // Fallback to title tag
+    const titleMatch = html.match(/<title>([^<]+)<\/title>/i);
+    if (titleMatch) {
+      const title = titleMatch[1].replace(/\s*-\s*YouTube\s*$/i, '').trim();
+      return this.decodeEntities(title);
+    }
+
+    return null;
+  }
+
+  decodeEntities(str) {
+    return str
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/&apos;/g, "'");
   }
 }
 
-function extractDisplayName(html) {
-  // og:title
-  const og = html.match(/<meta\s+property="og:title"\s+content="([^"]+)"/i);
-  if (og && og[1]) return decodeEntities(og[1].trim());
-  const t = html.match(/<title>([^<]+)<\/title>/i);
-  if (t && t[1]) return decodeEntities(t[1].replace(/\s*-\s*YouTube\s*$/i, '').trim());
-  return null;
-}
+// Initialize resolver
+const resolver = new DisplayNameResolver();
 
-function decodeEntities(str) {
-  return str
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&apos;/g, "'");
-}
-
-chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  if (!msg || msg.type !== 'resolveDisplayName') return;
-  // Backward compatibility: old messages only had handle
-  resolveDisplayName(msg.handle, msg.channelId).then(r => sendResponse(r));
-  return true; // async
+// Handle messages from content script
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type === 'resolveDisplayName') {
+    resolver.resolve(message.handle, message.channelId)
+      .then(result => sendResponse(result))
+      .catch(error => sendResponse({ 
+        displayName: null, 
+        error: error.message 
+      }));
+    return true; // Async response
+  }
 });
 
-console.debug('[YSCH/bg] service worker loaded (v2 channelId support)');
+console.debug('[YSCH/bg] Clean background script loaded');

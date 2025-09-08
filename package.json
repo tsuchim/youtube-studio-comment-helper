@@ -9,11 +9,15 @@
     "validate": "node scripts/validate-manifest.js",
     "build": "npm run lint && npm run validate",
   "build:zip": "node scripts/build-zip.js",
+  "version:sync": "node scripts/sync-manifest-version.js",
+  "release": "npm run build && npx standard-version --skip.tag=true && npm run version:sync && git add manifest.json package.json CHANGELOG.md && git commit -m 'chore(release): sync manifest version' || echo 'No sync commit'",
+  "release:tag": "npx standard-version && npm run version:sync && git add manifest.json package.json CHANGELOG.md && git commit -m 'chore(release): sync manifest version' || echo 'No sync commit'",
     "test": "echo \"No tests specified\" && exit 0"
   },
   "devDependencies": {
   "eslint": "^8.57.0",
-  "archiver": "^5.3.2"
+  "archiver": "^5.3.2",
+  "standard-version": "^9.5.0"
   },
   "keywords": ["youtube", "chrome-extension", "comment-helper"],
   "author": "Your Name",

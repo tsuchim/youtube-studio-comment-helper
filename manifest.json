@@ -3,7 +3,9 @@
   "name": "YouTube Studio Comment Helper",
   "version": "0.2.1",
   "description": "Clean handle-to-displayName replacement for YouTube Studio and main site.",
-  "permissions": ["storage"],
+  "permissions": [
+    "storage"
+  ],
   "host_permissions": [
     "https://studio.youtube.com/*",
     "https://www.youtube.com/*"
@@ -15,15 +17,26 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://studio.youtube.com/*", "https://www.youtube.com/*"],
-      "js": ["src/content/content.js"],
+      "matches": [
+        "https://studio.youtube.com/*",
+        "https://www.youtube.com/*"
+      ],
+      "js": [
+        "src/content/content.js"
+      ],
       "run_at": "document_start"
     }
   ],
   "web_accessible_resources": [
     {
-      "resources": ["src/inject/app.js", "pr-test.js"],
-      "matches": ["https://studio.youtube.com/*", "https://www.youtube.com/*"]
+      "resources": [
+        "src/inject/app.js",
+        "pr-test.js"
+      ],
+      "matches": [
+        "https://studio.youtube.com/*",
+        "https://www.youtube.com/*"
+      ]
     }
   ],
   "background": {

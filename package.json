@@ -17,7 +17,7 @@
   "devDependencies": {
     "eslint": "^8.57.0",
     "archiver": "^5.3.2",
-  "standard-version": "^9.5.2"
+    "standard-version": "^9.5.0"
   },
   "keywords": [
     "youtube",

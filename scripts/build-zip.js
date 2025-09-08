@@ -8,15 +8,33 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, '..');
 const distDir = path.join(projectRoot, 'dist');
-const outFile = path.join(distDir, 'youtube-studio-comment-helper.zip');
+
+// Read version from package.json for versioned artifact naming
+let version = '0.0.0';
+try {
+  const pkgJson = JSON.parse(fs.readFileSync(path.join(projectRoot, 'package.json'), 'utf8'));
+  if (pkgJson && typeof pkgJson.version === 'string') {
+    version = pkgJson.version.trim();
+  }
+} catch (e) {
+  console.warn('Could not read version from package.json, using 0.0.0:', e.message);
+}
+
+// Sanitize version (remove leading 'v' if present)
+version = version.replace(/^v/, '');
+
+const artifactName = `youtube-studio-comment-helper-v${version}.zip`;
+const outFile = path.join(distDir, artifactName);
 
 async function main() {
   if (!fs.existsSync(distDir)) {
     fs.mkdirSync(distDir, { recursive: true });
   }
-  // Remove existing file to ensure clean archive
-  if (fs.existsSync(outFile)) {
-    fs.unlinkSync(outFile);
+  // Clean prior artifacts for this project to avoid clutter
+  for (const f of fs.readdirSync(distDir)) {
+    if (f.startsWith('youtube-studio-comment-helper') && f.endsWith('.zip')) {
+      fs.unlinkSync(path.join(distDir, f));
+    }
   }
 
   const output = fs.createWriteStream(outFile);

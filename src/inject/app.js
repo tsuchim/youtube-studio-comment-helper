@@ -60,9 +60,15 @@
       this.log = logger;
       this.resolved = new Map(); // cacheKey -> displayName
       this.requested = new Set(); // cacheKey
+<<<<<<< HEAD
   // handle/channelId 毎に紐づく要素集合
   this.keyToElements = new Map(); // key -> Set<element>
   // 要素ごとの現在状態
+=======
+  // Element sets associated with each handle/channelId
+  this.keyToElements = new Map(); // key -> Set<element>
+  // Current state for each element
+>>>>>>> 3b4254e39415ef71f9caf059c4a0cbee6a3a46c1
   this.elementState = new WeakMap(); // el -> { key, rawHandle, replaced }
     }
     
@@ -265,7 +271,11 @@
       // Intersection observer for viewport entry
       this.setupIntersectionObserver();
 
+<<<<<<< HEAD
   // Anchor-level intersection observer (後からビューに入った未適用要素を補足)
+=======
+  // Anchor-level intersection observer (captures unapplied elements that enter the view later)
+>>>>>>> 3b4254e39415ef71f9caf059c4a0cbee6a3a46c1
   this.setupAnchorObserver();
     }
     
@@ -318,6 +328,7 @@
         }, 300);
       };
       
+<<<<<<< HEAD
   // window のスクロール (通常のページ全体スクロール)
   window.addEventListener('scroll', this.scrollHandler, { passive: true });
   // capture で任意のスクロールコンテナからのイベントも拾う (Studioは内部スクロールが多い)
@@ -325,6 +336,15 @@
   // 既知のスクロールコンテナ候補にリスナを追加 (存在すれば)
   this.attachScrollContainers();
   // 動的に追加されるスクロールコンテナを数秒ごとに探索
+=======
+  // window scroll (normal page-wide scrolling)
+  window.addEventListener('scroll', this.scrollHandler, { passive: true });
+  // Use capture to catch scroll events from arbitrary scroll containers (Studio often uses internal scrolling)
+  document.addEventListener('scroll', this.scrollHandler, { passive: true, capture: true });
+  // Add listeners to known scroll container candidates (if they exist)
+  this.attachScrollContainers();
+  // Periodically search for dynamically added scroll containers every few seconds
+>>>>>>> 3b4254e39415ef71f9caf059c4a0cbee6a3a46c1
   this.scrollContainerWatcher = setInterval(() => this.attachScrollContainers(), 4000);
     }
     
@@ -436,7 +456,11 @@
     const count = replacer.processAll();
     if (trigger && count) trigger.registerAnchorsForObservation();
   }, logger);
+<<<<<<< HEAD
   // フォールバック定期処理を有効化（無限スクロールでイベントを取り逃した場合の保険）
+=======
+  // Enable fallback periodic processing (safety net for missed events in infinite scroll)
+>>>>>>> 3b4254e39415ef71f9caf059c4a0cbee6a3a46c1
   trigger.enableFallback(7000);
   
   // Explicit startup kicks (初期ロード直後に確実に走らせる)

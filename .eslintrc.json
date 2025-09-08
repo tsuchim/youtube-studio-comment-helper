@@ -1,8 +1,0 @@
-{
-  "env": { "browser": true, "es2022": true },
-  "extends": ["eslint:recommended", "prettier"],
-  "rules": {
-    "no-unused-vars": ["warn", { "argsIgnorePattern": "^_" }],
-    "no-constant-condition": ["warn", { "checkLoops": false }]
-  }
-}

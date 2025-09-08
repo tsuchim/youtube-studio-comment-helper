@@ -436,7 +436,7 @@
     const count = replacer.processAll();
     if (trigger && count) trigger.registerAnchorsForObservation();
   }, logger);
-  // フォールバック定期処理を有効化（無限スクロールでイベントを取り逃した場合の保険）
+  // Enable fallback periodic processing (safety net for missed events in infinite scroll)
   trigger.enableFallback(7000);
   
   // Explicit startup kicks (初期ロード直後に確実に走らせる)

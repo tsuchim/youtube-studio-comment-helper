@@ -64,6 +64,13 @@
   this.keyToElements = new Map(); // key -> Set<element>
   // Current state for each element
   this.elementState = new WeakMap(); // el -> { key, rawHandle, replaced }
+      // Contexts to ignore (YouTube watch page owner header, etc.)
+      this.ignoreAnchorContexts = [
+        'ytd-watch-metadata #owner',
+        'ytd-watch-metadata ytd-video-owner-renderer',
+        '#top-row #owner',
+        'ytd-watch-metadata ytd-channel-name'
+      ];
     }
     
     getCacheKey(type, value) {
@@ -121,6 +128,15 @@
     }
     
     processAnchor(anchor) {
+      // Skip if anchor or ancestors explicitly opt-out
+      try {
+        if (anchor?.closest?.('[data-ysch-skip="1"], [data-ysch-ignore]')) return false;
+        // Skip known non-target contexts (watch page owner header)
+        for (const sel of this.ignoreAnchorContexts) {
+          if (anchor.closest?.(sel)) return false;
+        }
+      } catch { /* ignore selector errors */ }
+
       const extracted = HandleExtractor.extract(anchor);
       if (!extracted) return false;
   const { type, value } = extracted;

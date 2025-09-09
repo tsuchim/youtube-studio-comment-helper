@@ -24,6 +24,6 @@
     "chrome-extension",
     "comment-helper"
   ],
-  "author": "Your Name",
-  "license": "MIT"
+  "author": "Yuji Tsuchimoto <yuji@eikai.co.jp>",
+  "license": "AGPL-3.0"
 }

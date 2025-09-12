@@ -31,7 +31,8 @@ function getCurrentTag() {
     if (!out) return '';
     // If multiple tags, prefer the first one
     return out.split(/\r?\n/)[0].trim();
-  } catch {
+  } catch (error) {
+    console.error('[check-version-tag] Failed to get current tag:', error.message);
     return '';
   }
 }

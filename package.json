@@ -1,14 +1,14 @@
 {
   "name": "youtube-studio-comment-helper",
-  "version": "0.2.1",
+  "version": "0.2.3",
   "description": "Clean YouTube Studio Comment Helper - handle to display name replacement",
   "main": "background-v2.js",
   "type": "module",
   "scripts": {
     "lint": "eslint . --fix",
     "validate": "node scripts/validate-manifest.js",
-    "build": "npm run lint && npm run validate",
-    "build:zip": "node scripts/build-zip.js",
+    "build": "npm run lint && npm run validate && node scripts/check-version-tag.js",
+    "build:zip": "npm run version:sync && node scripts/check-version-tag.js && npm run build && node scripts/build-zip.js",
     "version:sync": "node scripts/sync-manifest-version.js",
     "release": "bash scripts/release.sh",
     "release:tag": "bash scripts/release-tag.sh",
@@ -24,6 +24,6 @@
     "chrome-extension",
     "comment-helper"
   ],
-  "author": "Yuji Tsuchimoto <yuji@eikai.co.jp>",
+  "author": "Yuji Tsuchimoto <info-chrome@eikai.co.jp>",
   "license": "AGPL-3.0"
 }

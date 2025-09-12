@@ -64,9 +64,7 @@ async function main() {
     'manifest.json',
     'background.js',
     'src',
-    'assets',
-    'scripts/validate-manifest.js',
-    'pr-test.js'
+    'assets'
   ];
 
   for (const item of include) {

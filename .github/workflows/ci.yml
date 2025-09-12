@@ -13,10 +13,11 @@ jobs:
         with:
           node-version: 20
       - run: npm ci
-      - run: npm run lint
-      - run: npm run validate
+      - run: npm run build
       - run: npm run build:zip
       - uses: actions/upload-artifact@v4
         with:
-          name: edge-extension-zip
-          path: dist.zip
+          name: youtube-studio-comment-helper-artifacts
+          path: |
+            dist/*.zip
+            dist/*.sha256

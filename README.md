@@ -23,3 +23,9 @@ Default is `warn`. ShadowRoot scan executes only when log level is `debug` (and 
 
 ## License
 AGPL-3.0-only. See `LICENSE`. Contributions are welcomed. By contributing, you agree that your contributions are licensed under AGPL-3.0.
+
+## Support policy
+- This extension is provided "as is" and free of charge, with no warranty or obligation of support.
+- Issue reports and improvement pull requests are generally welcome and will be handled on a best-effort basis.
+- Please avoid filing support requests that assume guaranteed response times or feature commitments.
+

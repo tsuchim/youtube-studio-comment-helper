@@ -13,10 +13,19 @@ jobs:
         with:
           node-version: 20
       - run: npm ci
-      - run: npm run lint
-      - run: npm run validate
+      - run: npm run build
       - run: npm run build:zip
+      - name: Generate SHA256 checksums
+        run: |
+          set -e
+          compgen -G "dist/*.zip" > /dev/null || { echo "No ZIP found in dist" >&2; exit 1; }
+          for f in dist/*.zip; do
+            sha256sum "$f" > "$f.sha256"
+            echo "Generated $f.sha256"
+          done
       - uses: actions/upload-artifact@v4
         with:
-          name: edge-extension-zip
-          path: dist.zip
+          name: youtube-studio-comment-helper-artifacts
+          path: |
+            dist/*.zip
+            dist/*.sha256

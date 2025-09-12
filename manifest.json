@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "YouTube Studio Comment Helper",
-  "version": "0.2.1",
+  "version": "0.2.3",
   "description": "Clean handle-to-displayName replacement for YouTube Studio and main site.",
   "permissions": [
     "storage"
@@ -15,6 +15,7 @@
     "48": "assets/icon-48.png",
     "128": "assets/icon-128.png"
   },
+  "homepage_url": "https://github.com/tsuchim/youtube-studio-comment-helper",
   "content_scripts": [
     {
       "matches": [
@@ -30,8 +31,7 @@
   "web_accessible_resources": [
     {
       "resources": [
-        "src/inject/app.js",
-        "pr-test.js"
+        "src/inject/app.js"
       ],
       "matches": [
         "https://studio.youtube.com/*",

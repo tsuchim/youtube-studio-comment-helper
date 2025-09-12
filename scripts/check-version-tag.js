@@ -3,7 +3,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -11,11 +11,11 @@ const root = path.resolve(__dirname, '..');
 
 const strictTag = process.argv.includes('--strict-tag');
 
-function readJson(p) {
+function readJson(filePath) {
   try {
-    return JSON.parse(fs.readFileSync(p, 'utf8'));
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
   } catch (e) {
-    console.error(`[check-version-tag] Failed to read ${p}:`, e.message);
+    console.error(`[check-version-tag] Failed to read ${filePath}:`, e.message);
     process.exit(1);
   }
 }
@@ -26,8 +26,11 @@ function getCurrentTag() {
   if (ref.startsWith('refs/tags/')) return ref.replace('refs/tags/', '');
   // Fallback to local git if available
   try {
-    const out = execSync('git describe --tags --exact-match HEAD', { stdio: ['ignore', 'pipe', 'ignore'] });
-    return String(out).trim();
+    // Use `git tag --points-at HEAD` which lists tags pointing at HEAD (safer than describe)
+    const out = execFileSync('git', ['tag', '--points-at', 'HEAD'], { encoding: 'utf8' });
+    if (!out) return '';
+    // If multiple tags, prefer the first one
+    return out.split(/\r?\n/)[0].trim();
   } catch {
     return '';
   }
@@ -55,9 +58,10 @@ if (pkgVer !== manVer) {
 
 const tag = getCurrentTag();
 if (tag) {
-  const expected = `v${pkgVer}`;
-  if (tag !== expected) {
-    console.error(`[check-version-tag] Tag mismatch: current tag is ${tag} but expected ${expected}`);
+  // Normalize leading 'v' for comparison (accept tags with or without leading 'v')
+  const normalize = s => String(s || '').replace(/^v/, '').trim();
+  if (normalize(tag) !== normalize(pkgVer)) {
+    console.error(`[check-version-tag] Tag mismatch: current tag is ${tag} but package.json version is ${pkgVer}`);
     process.exit(1);
   }
   console.log(`[check-version-tag] Tag OK: ${tag} matches package.json version ${pkgVer}`);

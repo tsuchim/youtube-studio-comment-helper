@@ -2,6 +2,7 @@
 // Clean background script for handle/channelId resolution with caching
 const CACHE_KEY = 'ysch_cache_v3';
 const TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
+const NETWORK_ERROR = 'NETWORK_ERROR';
 
 class DisplayNameResolver {
   constructor() {
@@ -71,24 +72,25 @@ class DisplayNameResolver {
     const base = 'https://www.youtube.com';
     const candidates = [];
     if (handle) {
-      const h = encodeURIComponent(handle);
+      const encodedHandle = encodeURIComponent(handle);
       candidates.push(
-        `/@${h}`,
-        `/@${h}/featured`,
-        `/@${h}/about`,
-        `/@${h}/videos`,
-        `/@${h}/streams`
+        `/@${encodedHandle}`,
+        `/@${encodedHandle}/featured`,
+        `/@${encodedHandle}/about`,
+        `/@${encodedHandle}/videos`,
+        `/@${encodedHandle}/streams`
       );
     } else if (channelId) {
-      const c = encodeURIComponent(channelId);
+      const encodedChannelId = encodeURIComponent(channelId);
       candidates.push(
-        `/channel/${c}`,
-        `/channel/${c}/featured`,
-        `/channel/${c}/about`
+        `/channel/${encodedChannelId}`,
+        `/channel/${encodedChannelId}/featured`,
+        `/channel/${encodedChannelId}/about`
       );
     }
 
-    let lastStatus = null;
+    let lastStatusCode = null;
+    let lastErrorMessage = null;
     for (const path of candidates) {
       const url = base + path;
       try {
@@ -98,7 +100,7 @@ class DisplayNameResolver {
           cache: 'default',
           redirect: 'follow'
         });
-        lastStatus = response.status;
+        lastStatusCode = response.status;
         if (!response.ok) {
           // Try next candidate on 4xx/5xx
           continue;
@@ -119,12 +121,15 @@ class DisplayNameResolver {
         // If we couldn't extract, keep trying other paths
       } catch (error) {
         // Network/runtime error -> try next
-        lastStatus = error.message || 'ERR';
+        lastErrorMessage = (error && error.message) ? error.message : NETWORK_ERROR;
       }
     }
 
     // All candidates failed
-    return { displayName: null, error: lastStatus ? `HTTP ${lastStatus}` : 'Resolution failed' };
+    const errorMsg = lastStatusCode
+      ? `HTTP ${lastStatusCode}`
+      : (lastErrorMessage || 'Resolution failed');
+    return { displayName: null, error: errorMsg };
   }
 
   extractDisplayName(html) {
@@ -157,7 +162,10 @@ class DisplayNameResolver {
           return this.decodeEntities(data.name.trim());
         }
       }
-    } catch { /* ignore JSON parse errors */ }
+    } catch (e) {
+      // Log at debug level; non-fatal because other extraction methods may succeed
+      console.debug('[YSCH/bg] JSON-LD parse error:', e?.message || e);
+    }
 
     return null;
   }

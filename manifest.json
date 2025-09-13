@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "YouTube Studio Comment Helper",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "description": "Clean handle-to-displayName replacement for YouTube Studio and main site.",
   "permissions": [
     "storage"

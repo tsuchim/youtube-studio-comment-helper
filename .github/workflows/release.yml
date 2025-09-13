@@ -42,6 +42,12 @@ jobs:
           fi
           echo "tag_name=$TAG_NAME" >> "$GITHUB_OUTPUT"
 
+      - name: Checkout target tag
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: refs/tags/${{ steps.resolve_tag.outputs.tag_name }}
+
       - name: Quick version check (fail-fast)
         run: node scripts/check-version-tag.js
         env:

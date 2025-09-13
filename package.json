@@ -1,6 +1,6 @@
 {
   "name": "youtube-studio-comment-helper",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "Clean YouTube Studio Comment Helper - handle to display name replacement",
   "main": "background-v2.js",
   "type": "module",

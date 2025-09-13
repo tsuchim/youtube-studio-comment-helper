@@ -2,6 +2,7 @@
 // Clean background script for handle/channelId resolution with caching
 const CACHE_KEY = 'ysch_cache_v3';
 const TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
+const NETWORK_ERROR = 'NETWORK_ERROR';
 
 class DisplayNameResolver {
   constructor() {
@@ -67,41 +68,68 @@ class DisplayNameResolver {
       return { displayName: cached.name, cached: true };
     }
 
-    // Determine fetch URL
-    const url = handle 
-      ? `https://www.youtube.com/@${encodeURIComponent(handle)}`
-      : `https://www.youtube.com/channel/${encodeURIComponent(channelId)}`;
-
-    try {
-      const response = await fetch(url, { 
-        credentials: 'omit', 
-        mode: 'cors',
-        cache: 'default'
-      });
-
-      if (!response.ok) {
-        return { displayName: null, error: `HTTP ${response.status}` };
-      }
-
-      const html = await response.text();
-      const displayName = this.extractDisplayName(html);
-
-      if (displayName) {
-        // Cache the result
-        this.cache.set(cacheKey, { name: displayName, ts: now });
-        
-        // Debounced save
-        clearTimeout(this.saveTimeout);
-        this.saveTimeout = setTimeout(() => this.saveCache(), 1000);
-        
-        return { displayName, cached: false };
-      }
-
-      return { displayName: null, error: 'Could not extract display name' };
-
-    } catch (error) {
-      return { displayName: null, error: error.message };
+    // Build candidate URLs and try sequentially to handle 404 on root handle page
+    const base = 'https://www.youtube.com';
+    const candidates = [];
+    if (handle) {
+      const encodedHandle = encodeURIComponent(handle);
+      candidates.push(
+        `/@${encodedHandle}`,
+        `/@${encodedHandle}/featured`,
+        `/@${encodedHandle}/about`,
+        `/@${encodedHandle}/videos`,
+        `/@${encodedHandle}/streams`
+      );
+    } else if (channelId) {
+      const encodedChannelId = encodeURIComponent(channelId);
+      candidates.push(
+        `/channel/${encodedChannelId}`,
+        `/channel/${encodedChannelId}/featured`,
+        `/channel/${encodedChannelId}/about`
+      );
     }
+
+    let lastStatusCode = null;
+    let lastErrorMessage = null;
+    for (const path of candidates) {
+      const url = base + path;
+      try {
+        const response = await fetch(url, {
+          credentials: 'omit',
+          mode: 'cors',
+          cache: 'default',
+          redirect: 'follow'
+        });
+        lastStatusCode = response.status;
+        if (!response.ok) {
+          // Try next candidate on 4xx/5xx
+          continue;
+        }
+
+        const html = await response.text();
+        const displayName = this.extractDisplayName(html);
+        if (displayName) {
+          // Cache the result
+          this.cache.set(cacheKey, { name: displayName, ts: now });
+
+          // Debounced save
+          clearTimeout(this.saveTimeout);
+          this.saveTimeout = setTimeout(() => this.saveCache(), 1000);
+
+          return { displayName, cached: false };
+        }
+        // If we couldn't extract, keep trying other paths
+      } catch (error) {
+        // Network/runtime error -> try next
+        lastErrorMessage = error?.message ?? NETWORK_ERROR;
+      }
+    }
+
+    // All candidates failed
+    const errorMsg = lastStatusCode
+      ? `HTTP ${lastStatusCode}`
+      : (lastErrorMessage || 'Resolution failed');
+    return { displayName: null, error: errorMsg };
   }
 
   extractDisplayName(html) {
@@ -116,6 +144,27 @@ class DisplayNameResolver {
     if (titleMatch) {
       const title = titleMatch[1].replace(/\s*-\s*YouTube\s*$/i, '').trim();
       return this.decodeEntities(title);
+    }
+
+    // Fallback to JSON-LD (application/ld+json) if present
+    try {
+      const ldMatch = html.match(/<script[^>]+type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/i);
+      if (ldMatch) {
+        const jsonText = ldMatch[1].trim();
+        const data = JSON.parse(jsonText);
+        if (Array.isArray(data)) {
+          for (const item of data) {
+            if (item && typeof item === 'object' && typeof item.name === 'string' && item.name.trim()) {
+              return this.decodeEntities(item.name.trim());
+            }
+          }
+        } else if (data && typeof data === 'object' && typeof data.name === 'string' && data.name.trim()) {
+          return this.decodeEntities(data.name.trim());
+        }
+      }
+    } catch (e) {
+      // Log at debug level; non-fatal because other extraction methods may succeed
+      console.debug('[YSCH/bg] JSON-LD parse error:', e?.message || e);
     }
 
     return null;

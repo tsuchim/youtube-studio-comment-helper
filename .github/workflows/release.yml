@@ -6,12 +6,18 @@ on:
       - 'v*.*.*'
   workflow_dispatch:
     inputs:
-      version:
-        description: 'Version (must match package.json & manifest.json)'
+      tag:
+        description: 'Tag to create/update release for (e.g. v0.2.4)'
         required: true
 
 permissions:
   contents: write
+  packages: write
+  issues: write
+
+concurrency:
+  group: release-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   build-and-release:
@@ -28,8 +34,34 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
-      - name: Quick version check (fail-fast)
+      - name: Resolve tag name
+        id: resolve_tag
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            TAG_NAME="${GITHUB_REF#refs/tags/}"
+          else
+            if [ -z "${{ inputs.tag }}" ]; then
+              echo "Input 'tag' is required when not running on a tag ref" >&2
+              exit 1
+            fi
+            TAG_NAME="${{ inputs.tag }}"
+          fi
+          echo "tag_name=$TAG_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout target tag
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: refs/tags/${{ steps.resolve_tag.outputs.tag_name }}
+
+      - name: Sync manifest version to package.json (pre-check)
+        run: npm run version:sync
+
+      - name: Verify versions and tag (fail-fast)
         run: node scripts/check-version-tag.js
+        env:
+          # Make the checker believe it's running on the resolved tag, so it validates tag==package.json
+          GITHUB_REF: refs/tags/${{ steps.resolve_tag.outputs.tag_name }}
 
       - name: Install dependencies
         run: npm ci
@@ -62,15 +94,15 @@ jobs:
             ${{ steps.meta.outputs.zip_path }}.sha256
 
       - name: Create or update GitHub Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
-          name: ${{ github.ref_name }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          tag_name: ${{ steps.resolve_tag.outputs.tag_name }}
+          name: ${{ steps.resolve_tag.outputs.tag_name }}
           draft: false
           prerelease: false
           generate_release_notes: true
           files: |
             ${{ steps.meta.outputs.zip_path }}
             ${{ steps.meta.outputs.zip_path }}.sha256
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # GITHUB_TOKEN is passed via `with.token`; no env duplication needed

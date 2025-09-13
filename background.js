@@ -67,41 +67,64 @@ class DisplayNameResolver {
       return { displayName: cached.name, cached: true };
     }
 
-    // Determine fetch URL
-    const url = handle 
-      ? `https://www.youtube.com/@${encodeURIComponent(handle)}`
-      : `https://www.youtube.com/channel/${encodeURIComponent(channelId)}`;
-
-    try {
-      const response = await fetch(url, { 
-        credentials: 'omit', 
-        mode: 'cors',
-        cache: 'default'
-      });
-
-      if (!response.ok) {
-        return { displayName: null, error: `HTTP ${response.status}` };
-      }
-
-      const html = await response.text();
-      const displayName = this.extractDisplayName(html);
-
-      if (displayName) {
-        // Cache the result
-        this.cache.set(cacheKey, { name: displayName, ts: now });
-        
-        // Debounced save
-        clearTimeout(this.saveTimeout);
-        this.saveTimeout = setTimeout(() => this.saveCache(), 1000);
-        
-        return { displayName, cached: false };
-      }
-
-      return { displayName: null, error: 'Could not extract display name' };
-
-    } catch (error) {
-      return { displayName: null, error: error.message };
+    // Build candidate URLs and try sequentially to handle 404 on root handle page
+    const base = 'https://www.youtube.com';
+    const candidates = [];
+    if (handle) {
+      const h = encodeURIComponent(handle);
+      candidates.push(
+        `/@${h}`,
+        `/@${h}/featured`,
+        `/@${h}/about`,
+        `/@${h}/videos`,
+        `/@${h}/streams`
+      );
+    } else if (channelId) {
+      const c = encodeURIComponent(channelId);
+      candidates.push(
+        `/channel/${c}`,
+        `/channel/${c}/featured`,
+        `/channel/${c}/about`
+      );
     }
+
+    let lastStatus = null;
+    for (const path of candidates) {
+      const url = base + path;
+      try {
+        const response = await fetch(url, {
+          credentials: 'omit',
+          mode: 'cors',
+          cache: 'default',
+          redirect: 'follow'
+        });
+        lastStatus = response.status;
+        if (!response.ok) {
+          // Try next candidate on 4xx/5xx
+          continue;
+        }
+
+        const html = await response.text();
+        const displayName = this.extractDisplayName(html);
+        if (displayName) {
+          // Cache the result
+          this.cache.set(cacheKey, { name: displayName, ts: now });
+
+          // Debounced save
+          clearTimeout(this.saveTimeout);
+          this.saveTimeout = setTimeout(() => this.saveCache(), 1000);
+
+          return { displayName, cached: false };
+        }
+        // If we couldn't extract, keep trying other paths
+      } catch (error) {
+        // Network/runtime error -> try next
+        lastStatus = error.message || 'ERR';
+      }
+    }
+
+    // All candidates failed
+    return { displayName: null, error: lastStatus ? `HTTP ${lastStatus}` : 'Resolution failed' };
   }
 
   extractDisplayName(html) {
@@ -117,6 +140,24 @@ class DisplayNameResolver {
       const title = titleMatch[1].replace(/\s*-\s*YouTube\s*$/i, '').trim();
       return this.decodeEntities(title);
     }
+
+    // Fallback to JSON-LD (application/ld+json) if present
+    try {
+      const ldMatch = html.match(/<script[^>]+type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/i);
+      if (ldMatch) {
+        const jsonText = ldMatch[1].trim();
+        const data = JSON.parse(jsonText);
+        if (Array.isArray(data)) {
+          for (const item of data) {
+            if (item && typeof item === 'object' && typeof item.name === 'string' && item.name.trim()) {
+              return this.decodeEntities(item.name.trim());
+            }
+          }
+        } else if (data && typeof data === 'object' && typeof data.name === 'string' && data.name.trim()) {
+          return this.decodeEntities(data.name.trim());
+        }
+      }
+    } catch { /* ignore JSON parse errors */ }
 
     return null;
   }

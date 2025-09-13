@@ -121,7 +121,7 @@ class DisplayNameResolver {
         // If we couldn't extract, keep trying other paths
       } catch (error) {
         // Network/runtime error -> try next
-        lastErrorMessage = (error && error.message) ? error.message : NETWORK_ERROR;
+        lastErrorMessage = error?.message ?? NETWORK_ERROR;
       }
     }
 

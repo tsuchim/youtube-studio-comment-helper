@@ -1,47 +1,11 @@
-name: Build and Release
+name: (disabled) Build and Release
 
 on:
-  workflow_dispatch:
-
-permissions:
-  contents: write
-  packages: write
-  issues: write
+  workflow_dispatch: {}
 
 jobs:
-  build-and-release:
+  disabled:
     runs-on: ubuntu-latest
-
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '18'
-        cache: 'npm'
-
-    - name: Install dependencies
-      run: npm ci
-
-    - name: Build ZIP
-      run: npm run build:zip
-
-    - name: Generate SHA256 hash
-      run: |
-        cd dist
-        sha256sum *.zip > sha256sums.txt
-        cat sha256sums.txt
-
-    # Only create a Release when this workflow was triggered by a tag push
-    - name: Create GitHub Release
-      if: startsWith(github.ref, 'refs/tags/')
-      uses: softprops/action-gh-release@v1
-      with:
-        token: ${{ secrets.GITHUB_TOKEN }}
-        files: |
-          dist/*.zip
-          dist/sha256sums.txt
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: This workflow is disabled. Use release.yml instead.
+        run: echo "This workflow is deprecated. Use .github/workflows/release.yml"

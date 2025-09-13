@@ -15,6 +15,10 @@ permissions:
   packages: write
   issues: write
 
+concurrency:
+  group: release-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   build-and-release:
     runs-on: ubuntu-latest
@@ -50,7 +54,10 @@ jobs:
           fetch-depth: 0
           ref: refs/tags/${{ steps.resolve_tag.outputs.tag_name }}
 
-      - name: Quick version check (fail-fast)
+      - name: Sync manifest version to package.json (pre-check)
+        run: npm run version:sync
+
+      - name: Verify versions and tag (fail-fast)
         run: node scripts/check-version-tag.js
         env:
           # Make the checker believe it's running on the resolved tag, so it validates tag==package.json
@@ -87,7 +94,7 @@ jobs:
             ${{ steps.meta.outputs.zip_path }}.sha256
 
       - name: Create or update GitHub Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           tag_name: ${{ steps.resolve_tag.outputs.tag_name }}
@@ -98,5 +105,4 @@ jobs:
           files: |
             ${{ steps.meta.outputs.zip_path }}
             ${{ steps.meta.outputs.zip_path }}.sha256
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # GITHUB_TOKEN is passed via `with.token`; no env duplication needed

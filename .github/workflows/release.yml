@@ -81,6 +81,7 @@ jobs:
       - name: Create or update GitHub Release
         uses: softprops/action-gh-release@v1
         with:
+          token: ${{ secrets.GITHUB_TOKEN }}
           tag_name: ${{ steps.resolve_tag.outputs.tag_name }}
           name: ${{ steps.resolve_tag.outputs.tag_name }}
           draft: false

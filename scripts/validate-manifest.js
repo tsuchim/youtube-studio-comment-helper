@@ -16,6 +16,6 @@ if (!Array.isArray(m.host_permissions) || !m.host_permissions.includes('https://
 console.log('[manifest] OK');
 
 // Icon existence check
-['assets/icon-16.png','assets/icon-48.png','assets/icon-128.png'].forEach((p) => {
+['assets/icon-16.png','assets/icon-48.png','assets/icon-128.png','assets/icon-300.png'].forEach((p) => {
   if (!fs.existsSync(p) || fs.statSync(p).size === 0) fail(`icon missing or empty: ${p}`);
 });

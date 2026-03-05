@@ -19,7 +19,7 @@ if (!fs.existsSync(sourcePath)) {
   fail(`source icon not found: ${sourcePath}`);
 }
 
-const sizes = [16, 48, 128];
+const sizes = [16, 48, 128, 300];
 
 const src = sharp(sourcePath, { failOn: 'none' });
 const meta = await src.metadata();

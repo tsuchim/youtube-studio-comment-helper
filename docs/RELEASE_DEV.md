@@ -26,7 +26,7 @@ This document contains the technical details for contributors and maintainers ab
 7. Upload artifacts to the workflow run.
 8. Create or update GitHub Release using `softprops/action-gh-release@v2` and attach ZIP + SHA256.
 
--## Security and reproducibility guarantees
+## Security and reproducibility guarantees
 - Deterministic source snapshot: workflow checks out the specific commit referenced by the tag, guaranteeing the source code used for building can be reproduced by checking out that tag locally.
 - Explicit include list: `scripts/build-zip.js` contains an explicit list of files/directories to include in the ZIP. It does not glob the entire checkout without control — this reduces accidental inclusion.
 - Artifact integrity: Each release includes a SHA256 checksum file for consumers to verify.
@@ -37,7 +37,7 @@ This document contains the technical details for contributors and maintainers ab
 - External dependencies: The build scripts currently do not fetch remote resources for inclusion into the ZIP. If future build steps require network fetches, those sources must be audited and/or pinned.
 
 ## How to reproduce locally
-1. Checkout the tag you want to reproduce: `git checkout refs/tags/v0.2.5`
+1. Checkout the tag you want to reproduce: `git checkout refs/tags/vX.Y.Z`
 2. Run `npm ci` to install dependencies
 3. Optionally run `npm run version:sync` to align manifest
 4. Run `npm run build:zip` to create the ZIP under `dist/`

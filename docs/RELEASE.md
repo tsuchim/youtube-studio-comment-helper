@@ -35,20 +35,3 @@ This document summarizes how to obtain and verify releases. For technical detail
 2. Compare the attached SHA256 checksum
 3. For advanced verification, see `docs/RELEASE_DEV.md`
 
----
-
-English
-
-This document provides a short guide on where to get releases and how to perform basic checks. For reproduction steps and developer-oriented release procedures, see `docs/RELEASE_DEV.md`.
-
-Summary
-- Releases are built from a specific GitHub tag and packaged by GitHub Actions.
-- Each release includes a ZIP archive and a SHA256 checksum. The checksum lets you verify that the downloaded file has not been modified after release. A checksum alone does not guarantee the build environment or the build process.
-
-Where to get releases and updates
-- Obtain the extension from the browser extension store or the official distribution page.
-- Store distribution provides automatic updates so fixes and important changes are applied promptly.
-
-Basic verification for downloaded ZIPs
-- If you download a ZIP from GitHub Releases, verify its SHA256 checksum. See `docs/RELEASE_DEV.md` for full verification and reproduction instructions.
-

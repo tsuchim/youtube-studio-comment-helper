@@ -53,7 +53,7 @@ if (!manVer) {
 }
 
 if (pkgVer !== manVer) {
-  console.error(`[check-version-tag] Version mismatch: package.json(${pkgVer}) != manifest.json(${manVer})`);
+  console.error(`[check-version-tag] Error: package.json and manifest.json versions are not identical. package.json: ${pkgVer}, manifest.json: ${manVer}`);
   process.exit(1);
 }
 
